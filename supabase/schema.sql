@@ -121,7 +121,10 @@ returns void language sql security definer set search_path = public, extensions 
   on conflict (key) do update set value = excluded.value
 $$;
 
-revoke all on function pracsys_login(text, jsonb), pracsys_get(uuid), pracsys_save_scope(uuid, jsonb),
-  pracsys_save_set(uuid, date, jsonb, jsonb), pracsys_overview(text), pracsys_set_teacher_key(text) from public;
+-- Supabase 預設會把 public schema 新建的函式直接授權給 anon、authenticated，
+-- 所以除了 public 也要明確收回，否則網頁也能呼叫 pracsys_set_teacher_key 改掉老師密碼
+revoke all on function pracsys_norm(text), pracsys_login(text, jsonb), pracsys_get(uuid), pracsys_save_scope(uuid, jsonb),
+  pracsys_save_set(uuid, date, jsonb, jsonb), pracsys_overview(text), pracsys_set_teacher_key(text)
+  from public, anon, authenticated;
 grant execute on function pracsys_login(text, jsonb), pracsys_get(uuid), pracsys_save_scope(uuid, jsonb),
   pracsys_save_set(uuid, date, jsonb, jsonb), pracsys_overview(text) to anon, authenticated;
