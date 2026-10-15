@@ -23,6 +23,7 @@ async function rpc(fn, args) {
   });
   const text = await r.text();
   const data = text ? JSON.parse(text) : null;
+  if (data?.code === "PGRST202") throw new Error("資料庫還沒建立，請老師在 Supabase 執行 supabase/schema.sql");
   if (!r.ok) throw new Error(data?.message || `資料庫錯誤 ${r.status}`);
   return data;
 }
