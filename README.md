@@ -1,47 +1,46 @@
 # Prac-sys — 每日數學練習
 
-給學生每天練習 20 題的小程式。題目取自 [OLE-QS](https://github.com/czpeanut/OLE-QS) 題庫（**唯讀**，不寫回），
-練習進度用 OLE-QS 的**數學題型分類**計算，學生用名字登入，練習紀錄存在 SQLite 資料庫。
+給學生每天練習 20 題的小網頁，部署在 GitHub Pages（純靜態，`docs/` 目錄）。
+題目取自 [OLE-QS](https://github.com/czpeanut/OLE-QS) 題庫（**唯讀**，不寫回），
+練習進度用 OLE-QS 的**數學題型分類**計算，學生用名字登入。
 
-目前範圍：**國二上學期（八上）2-2 ～ 4-1**
+目前範圍：**國二上學期（八上）2-2 ～ 4-1，純文字單選題**（帶圖的題目、填充題之後再逐步加入）
 
 | 單元 | 題目 | 題型 |
 |---|---|---|
-| 2-2 根式的運算 | 360 | 12 |
-| 2-3 畢氏定理 | 157 | 10 |
-| 3-1 提公因式與乘法公式作因式分解 | 244 | 12 |
-| 3-2 利用十字交乘法因式分解 | 237 | 11 |
-| 4-1 因式分解法解一元二次方程式 | 359 | 13 |
+| 2-2 根式的運算 | 227 | 12 |
+| 2-3 畢氏定理 | 110 | 10 |
+| 3-1 提公因式與乘法公式作因式分解 | 163 | 12 |
+| 3-2 利用十字交乘法因式分解 | 163 | 11 |
+| 4-1 因式分解法解一元二次方程式 | 312 | 13 |
 
 （題型數含「其他題型」，它不計入熟練進度。）
 
-## 快速開始
+## 部署到 GitHub Pages
 
-```bash
-pip install -r requirements.txt
-uvicorn app.main:app --host 0.0.0.0 --port 8100
-# 學生：http://127.0.0.1:8100
-# 老師總覽：http://127.0.0.1:8100/teacher（要先設 PRACSYS_TEACHER=<密碼>）
-```
+repo 的 Settings → Pages → Build and deployment：
+Source 選 **Deploy from a branch**，Branch 選預設分支、資料夾選 **/docs**，儲存。
+之後每次推送到該分支就會自動更新。
 
-或用 Docker：`PRACSYS_TEACHER=<密碼> docker compose up -d --build`，練習紀錄存在 `data/practice.db`。
-
-| 環境變數 | 預設 | 說明 |
-|---|---|---|
-| `PRACSYS_DB` | `data/practice.db` | 練習紀錄資料庫 |
-| `PRACSYS_POOL` | `data/pool.json` | 題目池 |
-| `PRACSYS_TEACHER` | （空） | 老師總覽密碼；沒設就不開放總覽 |
+本機預覽：`cd docs && python -m http.server 8000`，開 http://127.0.0.1:8000
+（要用 http 開，直接雙擊 index.html 會讀不到題目池）。
 
 ## 使用方式
 
-- **名字登入**：輸入名字就開始，同一個名字就是同一個人（不分大小寫），下次接著練。
-- **今日練習**：每人每天一份 20 題，當天重開還是同一份。
-  選擇題按「送出」直接判對錯；填充題先寫答案、按「看答案」，再自己按「我答對了／我答錯了」。
+- **名字登入**：輸入名字就開始，同一個名字就是同一個人（不分大小寫）。
+- **今日練習**：每人每天一份 20 題，當天重開還是同一份；選好選項按「送出」直接判對錯。
 - **練習範圍**：勾選要練的單元（分章節）。新學生預設從 2-2 開始；今天還沒作答前改範圍會立即重新出題。
 - **練習進度**：每個單元、每個題型的答對／作答數、近 5 題正確率與狀態（未練習／練習中／已熟練）。
-- **老師總覽**（`/teacher`）：所有學生各單元的熟練題型數、作答數、連續練習天數。
 
-### 出題規則（`app/practice.py`）
+### 練習紀錄存在哪裡
+
+GitHub Pages 只能放靜態檔案，沒有伺服器，所以目前紀錄存在**學生自己裝置的瀏覽器**（localStorage），以名字區分：
+
+- 同一台裝置可以多位同學輪流用，登入畫面會列出這台裝置上的名字
+- 換裝置、清除瀏覽器資料、無痕模式都會看不到紀錄 —— 「練習範圍」頁可以下載備份、之後還原
+- 老師目前看不到全班的進度；要集中記錄需要接一個線上資料庫（例如 OLE-QS 已在用的 Supabase），是下一步
+
+### 出題規則（`docs/practice.js`）
 
 1. 先放之前答錯、還沒再答對的題目（昨天以前的，最多 4 題）
 2. 其餘依題型輪流抽：還沒熟練的題型每輪 2 題、已熟練的 1 題，正確率低、做得少的題型排前面；
@@ -52,13 +51,14 @@ uvicorn app.main:app --host 0.0.0.0 --port 8100
 
 - **題型熟練**：答對過 4 題以上（不同題目），且最近 5 次作答答對 80% 以上
 - **單元進度**＝已熟練題型數 ／ 題型數（「其他題型」＝題型目錄歸不進去的題目，不計）
-- 題目的單元與題型在出題時快照到紀錄上，之後重建題目池也不影響舊紀錄
+- 題目的單元與題型在出題時記在紀錄上，之後重建題目池也不影響舊紀錄
 
-## 題目池（`data/pool.json`）
+## 題目池（`docs/pool.json`）
 
-由 `scripts/build_pool.py` 從 OLE-QS 產生，已放進版控，執行時不需要 OLE-QS：
+由 `scripts/build_pool.py` 從 OLE-QS 產生（同時寫出公式樣式 `docs/math.css`）：
 
 ```bash
+pip install -r requirements.txt
 python scripts/build_pool.py --oleqs ../OLE-QS                         # 預設範圍 八上 2-2～4-1
 python scripts/build_pool.py --oleqs ../OLE-QS --units 8-1_2-2,8-1_2-3,8-1_3-1,8-1_3-2,8-1_4-1,8-1_4-2
 ```
@@ -72,29 +72,20 @@ python scripts/build_pool.py --oleqs ../OLE-QS --units 8-1_2-2,8-1_2-3,8-1_3-1,8
 | `data/pipeline_records/math_patterns_*.tar.gz` | 每題的題型歸類與難度 |
 | `apps/api/quality.py`、`apps/api/mathfmt.py` | 品管閘門、公式轉 HTML（與組卷平台同一套） |
 
-收錄條件（學生要能自己作答、自己對答案）：
-
-- 單選題或填充題，通過 OLE-QS 品管閘門
-- 有答案且不是「有疑義」
-- **沒有附圖**：OLE-QS 的圖檔不在版控裡，帶圖的題目看不到圖無法作答，題幹寫「如圖」卻沒附圖的也排除
-- 題幹與選項完全相同的只留一題
-
-八上 2-2～4-1 在題庫裡有題型歸類的共 1,958 題，收錄 1,357 題；排除需要附圖 312、計算／是非等題型 201、
-沒有答案或答案有疑義 49、未通過品管閘門 30、重複 9 題。
+收錄條件：單選題、通過 OLE-QS 品管閘門、有答案且不是「有疑義」、沒有附圖
+（題幹寫「如圖」卻沒附圖的也排除）、題幹與選項完全相同的只留一題。
+八上 2-2～4-1 在題庫裡有題型歸類的 1,958 題中收錄 975 題。
 
 ## 授權與來源標註
 
 依 OLE-QS 的授權條件，**每題下方固定顯示出處**（`[縣市 學校 學年度]`），不可關閉。
-OLE-QS 的答案大多是 AI 作答（兩個模型一致或多數決），對答案時會標示「AI 作答，未經人工確認」。
 
 ## 目錄
 
 ```
-app/main.py          API 與網頁路由
-app/practice.py      出題、題型進度
-app/db.py            練習紀錄資料庫（student、daily_set、item）
-app/static/          學生頁面、老師總覽
-scripts/build_pool.py  從 OLE-QS 產生題目池
-data/pool.json       題目池
-tests/               端對端測試（pytest）
+docs/index.html, app.js, style.css   網頁（GitHub Pages 從這裡發布）
+docs/practice.js                     出題、題型進度（純函式）
+docs/pool.json, math.css             題目池、公式樣式（build_pool.py 產生）
+scripts/build_pool.py                從 OLE-QS 產生題目池
+tests/practice.test.mjs              測試：node --test tests/practice.test.mjs
 ```

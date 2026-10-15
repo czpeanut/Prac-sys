@@ -1,4 +1,2 @@
-fastapi>=0.110
-uvicorn[standard]>=0.29
-# 只有重建題目池（scripts/build_pool.py）才需要
+# 只有重建題目池（scripts/build_pool.py）需要；網站本身是純靜態檔案
 PyYAML>=6.0

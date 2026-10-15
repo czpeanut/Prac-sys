@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""從 OLE-QS 題庫（唯讀）產生每日練習的題目池 data/pool.json。
+"""從 OLE-QS 題庫（唯讀）產生每日練習的題目池 docs/pool.json（與公式樣式 docs/math.css）。
 
     python scripts/build_pool.py --oleqs ../OLE-QS
     python scripts/build_pool.py --oleqs ../OLE-QS --units 8-1_2-2,8-1_2-3   # 改範圍
@@ -10,8 +10,8 @@
   - data/pipeline_records/math_patterns_*.tar.gz   每題歸到哪個題型、難度
   - apps/api/quality.py、apps/api/mathfmt.py  品管閘門、公式轉 HTML（與組卷平台同一套）
 
-收錄條件（學生要能自己作答、自己對答案）：
-  - 單選題或填充題，且通過 OLE-QS 的品管閘門
+收錄條件（學生要能自己作答、自動對答案）：
+  - 單選題（--qtypes 可加 fill 收填充題，但目前網頁只支援單選），且通過 OLE-QS 的品管閘門
   - 有答案，且答案不是「有疑義（disputed）」
   - 沒有附圖、選項圖、共用素材或題組前文 —— 題庫的圖檔不在版控裡，帶圖的題目看不到圖就沒辦法作答；
     題幹寫「如圖」「下圖」卻沒附圖的也排除
@@ -81,7 +81,8 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--oleqs", type=Path, default=REPO.parent / "OLE-QS", help="OLE-QS 專案目錄（唯讀）")
     ap.add_argument("--units", default=",".join(DEFAULT_UNITS), help="單元鍵，依教學順序，逗號分隔")
-    ap.add_argument("-o", "--out", type=Path, default=REPO / "data/pool.json")
+    ap.add_argument("--qtypes", default="single", help="收錄的題型，逗號分隔（single、fill）")
+    ap.add_argument("-o", "--out", type=Path, default=REPO / "docs/pool.json")
     args = ap.parse_args()
 
     oleqs = args.oleqs.resolve()
@@ -91,6 +92,7 @@ def main() -> None:
     from apps.api.quality import evaluate  # noqa: E402
 
     units = [u.strip() for u in args.units.split(",") if u.strip()]
+    qtypes = {t.strip() for t in args.qtypes.split(",") if t.strip()}
     cls = load_classification(oleqs, units)
     docs = sorted({qid.rsplit("_s", 1)[0] for qid in cls})
 
@@ -108,8 +110,8 @@ def main() -> None:
             c = cls.get(q["id"])
             if not c:
                 continue
-            if q.get("type") not in ("single", "fill"):
-                skipped["不是單選或填充"] += 1
+            if q.get("type") not in qtypes:
+                skipped[f"題型不是 {'、'.join(sorted(qtypes))}"] += 1
                 continue
             if not evaluate(q, doc)[0]:
                 skipped["未通過品管閘門"] += 1
@@ -139,7 +141,6 @@ def main() -> None:
             else:
                 answer_html = "　".join(f"{CIRCLED[i] if i < len(CIRCLED) else f'({i + 1})'} {render(as_math(a))}"
                                        for i, a in enumerate(ans))
-            src = q.get("answer_source") or ""
             questions.append({
                 "id": q["id"],
                 "unit": c["unit"],
@@ -149,9 +150,7 @@ def main() -> None:
                 "stem_html": render(stem),
                 "options": [{"label": o["label"], "html": render(o.get("content") or "")} for o in opts],
                 "answer": ans,
-                "answer_html": answer_html,
-                # 答案是 AI 作答（非答案卷）時，對答案畫面要標示未經人工確認
-                "answer_ai": src.startswith("ai:") or q.get("answer_status") == "ai_generated",
+                **({"answer_html": answer_html} if q["type"] != "single" else {}),
                 "cite": cite,
             })
 
@@ -173,9 +172,10 @@ def main() -> None:
     order = {u: i for i, u in enumerate(units)}
     questions.sort(key=lambda q: (order[q["unit"]], q["type_code"], q["id"]))
     pool = {"built_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            "source": "OLE-QS", "math_css": MATH_CSS, "units": unit_meta, "questions": questions}
+            "source": "OLE-QS", "units": unit_meta, "questions": questions}
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(pool, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    (args.out.parent / "math.css").write_text(MATH_CSS.lstrip(), encoding="utf-8")
 
     print(f"題目池 {len(questions)} 題 → {args.out}")
     for m in unit_meta:

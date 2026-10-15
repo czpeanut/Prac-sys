@@ -4,8 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>每日數學練習</title>
-<link rel="stylesheet" href="/math.css">
-<link rel="stylesheet" href="/static/style.css">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="math.css">
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
 <header class="top">
@@ -17,12 +18,13 @@
   <!-- 登入 -->
   <section id="v-login" class="card narrow" hidden>
     <h2>輸入你的名字</h2>
-    <p class="muted">用名字記錄練習進度。下次用同一個名字就能接著練。</p>
+    <p class="muted">用名字記錄練習進度。下次在這台裝置用同一個名字就能接著練。</p>
     <form id="login-form">
       <input id="login-name" maxlength="20" placeholder="例如：王小明" autocomplete="name" required>
       <button class="primary">開始</button>
     </form>
     <p id="login-err" class="err"></p>
+    <p id="known" class="small"></p>
   </section>
 
   <!-- 主畫面 -->
@@ -61,11 +63,19 @@
         <button class="primary" id="scope-save">儲存範圍</button>
         <p id="scope-msg" class="muted"></p>
       </div>
+      <div class="card">
+        <h3>練習紀錄備份</h3>
+        <p class="muted small">紀錄存在這台裝置的瀏覽器裡。換裝置或清除瀏覽器資料前，先下載備份，之後再還原。</p>
+        <div class="actions">
+          <button id="backup">下載我的紀錄</button>
+          <label class="filebtn">還原紀錄<input type="file" id="restore" accept="application/json,.json" hidden></label>
+        </div>
+      </div>
     </section>
   </div>
 </main>
 
-<footer class="muted small">題目取自 OLE-QS 題庫的公開試題，每題下方標示出處。標有「AI 作答」的答案未經人工確認，若有疑問請問老師。</footer>
-<script src="/static/app.js"></script>
+<footer class="muted small">題目取自 OLE-QS 題庫的公開試題，每題下方標示出處。</footer>
+<script type="module" src="app.js"></script>
 </body>
 </html>

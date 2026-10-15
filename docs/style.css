@@ -54,13 +54,9 @@ input, textarea { font: inherit; width: 100%; padding: 8px 10px; border: 1px sol
 .opt.right { border-color: var(--ok); background: var(--ok-bg); }
 .opt.wrong { border-color: var(--bad); background: var(--bad-bg); }
 .actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; align-items: center; }
-.fill-input { margin-top: 4px; }
 .result { margin-top: 10px; padding: 8px 12px; border-radius: 8px; }
 .result.ok { background: var(--ok-bg); color: var(--ok); }
 .result.bad { background: var(--bad-bg); color: var(--bad); }
-.result.pending { background: var(--accent-bg); }
-.result .ans { color: var(--fg); }
-.ai { color: var(--warn); font-size: 13px; margin-left: 6px; }
 .done { text-align: center; font-size: 18px; }
 
 .unit h3 { display: flex; justify-content: space-between; gap: 8px; }
@@ -82,3 +78,4 @@ input, textarea { font: inherit; width: 100%; padding: 8px 10px; border: 1px sol
 table.list { width: 100%; border-collapse: collapse; font-size: 15px; }
 table.list td, table.list th { padding: 6px; border-top: 1px solid var(--line); text-align: left; }
 .scroll { overflow-x: auto; }
+.filebtn { display: inline-block; cursor: pointer; border-radius: 8px; border: 1px solid var(--line); padding: 6px 14px; }
