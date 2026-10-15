@@ -6,6 +6,7 @@
 <title>練習總覽</title>
 <link rel="icon" href="data:,">
 <link rel="stylesheet" href="style.css">
+<style>main, .top { max-width: 1100px; }</style>
 </head>
 <body>
 <header class="top"><h1>練習總覽（老師）</h1><a href="./" class="small">學生頁面</a></header>
@@ -39,19 +40,31 @@ $("#f").onsubmit = async (e) => {
     students = await overview($("#key").value);
   } catch (err) { $("#err").textContent = err.message; return; }
   const day = P.today();
+  // 欠最多的排前面
+  students = students.map((s) => ({ ...s, debt: P.debt(s, day) })).sort((a, b) => b.debt.owed - a.debt.owed || b.debt.todayLeft - a.debt.todayLeft);
   const head = pool.units.map((u) => `<th title="${esc(u.title)}">${esc(u.code)}</th>`).join("");
+  const counts = Object.fromEntries(P.DEBT_LEVELS.map((l) => [l.key, 0]));
+  students.forEach((s) => counts[s.debt.level.key]++);
+  const notDone = students.filter((s) => s.debt.started && s.debt.todayLeft).length;
+  const legend = P.DEBT_LEVELS.map((l) => `<span><span class="badge lv-${l.key}">${esc(l.label)}</span>${l.min ? `欠 ${l.min} 題以上` : "沒有欠題"}：${counts[l.key]} 人</span>`).join("");
   const rows = students.map((s, i) => {
     const p = P.progress(pool, s, day);
     const total = p.units.reduce((a, u) => a + u.attempts, 0);
     const right = P.records(s).filter((r) => r.ok).length;
+    const d = s.debt;
+    const todayCell = !d.started ? "—" : d.todayLeft ? `<span class="due">${d.todayDone}／${P.DAILY_GOAL}</span>` : `<span class="lv-ok-text">✔ ${d.todayDone}</span>`;
     return `<tr><td><button class="link" data-i="${i}">${esc(s.name)}</button></td>
+      <td>${todayCell}</td>
+      <td><span class="badge lv-${d.level.key}">${esc(d.level.label)}</span>${d.owed ? `<div class="small">欠 ${d.owed} 題</div>` : ""}</td>
       <td>${p.mastered}／${p.typeCount}</td>
       ${p.units.map((u) => `<td>${u.mastered}／${u.typeCount}<div class="muted small">${u.attempts} 題</div></td>`).join("")}
       <td>${total}<div class="muted small">${total ? Math.round((100 * right) / total) : 0}%</div></td>
       <td>${p.streak} 天</td><td>${esc(p.days[0]?.day ?? "—")}</td></tr>`;
   }).join("");
-  $("#out").innerHTML = `<div class="card scroll"><p class="muted small">各單元：已熟練題型／題型數，下方為累計作答題數。點名字看各題型細節。</p>
-    <table class="list"><tr><th>學生</th><th>熟練題型</th>${head}<th>作答／正確率</th><th>連續</th><th>最近練習</th></tr>${rows ||
+  $("#out").innerHTML = `<div class="card"><h3>每日進度（每天 ${P.DAILY_GOAL} 題，${P.GOAL_START.slice(5).replace("-", "/")} 起算）</h3>
+    <p>今天還沒練完：<b class="due">${notDone}</b> 人</p><div class="legend">${legend}</div></div>
+    <div class="card scroll"><p class="muted small">欠題＝過去每天應完成的題數減掉實際作答（今天做滿 ${P.DAILY_GOAL} 題後多做的會拿來還）。各單元：已熟練題型／題型數，下方為累計作答題數。點名字看各題型細節。</p>
+    <table class="list"><tr><th>學生</th><th>今天</th><th>欠題</th><th>熟練題型</th>${head}<th>作答／正確率</th><th>連續達標</th><th>最近練習</th></tr>${rows ||
     '<tr><td colspan="99" class="muted">還沒有學生</td></tr>'}</table></div>`;
   $("#detail").innerHTML = "";
   document.querySelectorAll("[data-i]").forEach((b) => (b.onclick = () => detail(students[b.dataset.i])));

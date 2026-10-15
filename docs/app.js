@@ -1,4 +1,4 @@
-// 每日練習前端（GitHub Pages 純靜態）：名字登入 → 今日 20 題 → 題型進度 → 練習範圍
+// 每日練習前端（GitHub Pages 純靜態）：名字登入 → 今日 10 題（每日進度、欠題量表）→ 題型進度
 // 練習紀錄存在 Supabase（docs/config.js 有設定時），否則存在這台裝置的瀏覽器；見 store.js。
 import * as P from "./practice.js";
 import { online, store } from "./store.js";
@@ -105,10 +105,55 @@ function summary() {
   const done = items.filter((i) => i.ok !== null).length, right = items.filter((i) => i.ok).length;
   $("#today-bar").style.width = n ? `${(100 * done) / n}%` : "0";
   $("#today-count").textContent = `完成 ${done}／${n} 題，答對 ${right} 題`;
+  const d = P.debt(me, P.today());
+  renderGoal(d);
   const box = $("#today-done");
   box.hidden = !(n && done === n);
-  if (!box.hidden) box.innerHTML = `🎉 今天的 ${n} 題完成了！答對 ${right} 題（${Math.round((100 * right) / n)}%）。<br>
-    <button class="link" onclick="tab('progress')">看練習進度</button>`;
+  if (box.hidden) return;
+  const more = n < P.MAX_PER_DAY
+    ? `<button class="primary" id="more">${d.owed ? `補欠的題目：再練 ${P.DAILY_N} 題` : `再練 ${P.DAILY_N} 題`}</button>` : "";
+  box.innerHTML = `🎉 這 ${n} 題完成了！答對 ${right} 題（${Math.round((100 * right) / n)}%）。
+    <div class="actions" style="justify-content:center">${more}<button class="link" onclick="tab('progress')">看練習進度</button></div>`;
+  const btn = $("#more");
+  if (btn) btn.onclick = async () => {
+    btn.disabled = true;
+    const day = P.today();
+    me.sets[day] = P.extend(pool, me, day);
+    loadToday();
+    await sync(day);
+    document.querySelectorAll(".q")[n]?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+}
+
+// 每日進度＋欠題量表
+function gauge(d) {
+  // 每一級等寬（標籤才對得齊），指針在所屬那一級裡依欠題數按比例放
+  const L = P.DEBT_LEVELS, w = 100 / L.length;
+  const i = L.indexOf(d.level);
+  const from = L[i].min, to = i + 1 < L.length ? L[i + 1].min : Math.max(P.DEBT_SCALE_MAX, from + 1);
+  const frac = d.owed === 0 ? 0.5 : Math.min(1, (d.owed - from) / (to - from)) * 0.9 + 0.05;
+  return `<div class="gauge"><div class="segs">${L.map((l, k) => `<i class="seg lv-${l.key}${k <= i ? " on" : ""}" title="${esc(l.note)}"></i>`).join("")}</div>
+    <b class="pin" style="left:${(i + frac) * w}%"></b></div>
+    <div class="ticks">${L.map((l, k) => `<span class="lv-${l.key}-text${k === i ? " here" : ""}">${esc(l.label)}<br>${
+      k + 1 < L.length ? (l.min === L[k + 1].min - 1 ? `${l.min} 題` : `${l.min}～${L[k + 1].min - 1} 題`) : `${l.min} 題以上`}</span>`).join("")}</div>`;
+}
+
+function renderGoal(d) {
+  const el = $("#goal");
+  if (!d.started) {
+    el.innerHTML = `<h3>每日進度</h3><p class="muted">從 ${P.GOAL_START.slice(5).replace("-", "/")} 開始，每天要完成 ${P.DAILY_GOAL} 題。</p>`;
+    return;
+  }
+  const today = d.todayLeft
+    ? `<span class="due">今天還沒練完，還差 <b>${d.todayLeft}</b> 題</span>`
+    : `<span class="lv-ok-text">✔ 今天的 ${P.DAILY_GOAL} 題完成了</span>`;
+  const owed = d.owed
+    ? `<span class="badge lv-${d.level.key}">${esc(d.level.label)}</span> 之前欠 <b>${d.owed}</b> 題沒做
+       <div class="muted small">今天做滿 ${P.DAILY_GOAL} 題之後，多做的題目會拿來還欠題。</div>`
+    : `<span class="badge lv-ok">進度正常</span> 沒有欠題`;
+  el.innerHTML = `<h3>每日進度　<span class="muted small">每天 ${P.DAILY_GOAL} 題，今天已作答 ${d.todayDone} 題</span></h3>
+    <div class="goal-line">${today}</div>
+    <div class="goal-line">${owed}</div>${gauge(d)}`;
 }
 
 function card(it, idx) {
@@ -163,7 +208,7 @@ function loadProgress() {
       <div><div class="muted small">已熟練題型</div><div class="big">${p.mastered}<span class="muted small"> ／ ${p.typeCount}</span></div></div>
       <div><div class="muted small">總進度</div><div class="big">${pct}%</div></div>
       <div><div class="muted small">累計作答</div><div class="big">${total}</div></div>
-      <div><div class="muted small">連續練習</div><div class="big">${p.streak}<span class="muted small"> 天</span></div></div>
+      <div><div class="muted small">連續達標</div><div class="big">${p.streak}<span class="muted small"> 天</span></div></div>
     </div><div class="bar"><i style="width:${pct}%"></i></div>`;
   $("#prog-units").innerHTML = p.units.map((u) => {
     const up = u.typeCount ? Math.round((100 * u.mastered) / u.typeCount) : 0;

@@ -1,11 +1,13 @@
 [hidden] { display: none !important; }
 :root {
+  --lv-ok: #16a34a; --lv-l1: #ca8a04; --lv-l2: #ea580c; --lv-l3: #dc2626; --lv-l4: #7f1d1d;
   --bg: #f6f7f9; --card: #fff; --fg: #1f2328; --muted: #6b7280; --line: #e5e7eb;
   --accent: #2563eb; --accent-bg: #eff6ff; --ok: #15803d; --ok-bg: #ecfdf3; --bad: #b91c1c; --bad-bg: #fef2f2;
   --warn: #a16207;
 }
 @media (prefers-color-scheme: dark) {
   :root {
+    --lv-ok: #4ade80; --lv-l1: #facc15; --lv-l2: #fb923c; --lv-l3: #f87171; --lv-l4: #e879f9;
     --bg: #111418; --card: #1b1f24; --fg: #e6e8eb; --muted: #9aa3ad; --line: #2d333b;
     --accent: #60a5fa; --accent-bg: #172554; --ok: #4ade80; --ok-bg: #052e16; --bad: #f87171; --bad-bg: #3b0d0d;
     --warn: #facc15;
@@ -90,3 +92,23 @@ table.list td, table.list th { padding: 6px; border-top: 1px solid var(--line); 
 .chip .muted { font-size: 12px; }
 .stem .katex, .opt .katex { font-size: 1.08em; }
 .stem, .opt > .oc { overflow-x: auto; overflow-y: hidden; min-width: 0; padding: 2px 0; }
+
+/* 每日進度與欠題量表 */
+.goal-line { margin: 4px 0; }
+.due { color: var(--bad); font-weight: 600; }
+.badge { display: inline-block; font-size: 13px; font-weight: 700; color: #fff; padding: 1px 10px; border-radius: 999px; margin-right: 6px; }
+.lv-ok { background: var(--lv-ok); } .lv-l1 { background: var(--lv-l1); } .lv-l2 { background: var(--lv-l2); }
+.lv-l3 { background: var(--lv-l3); } .lv-l4 { background: var(--lv-l4); }
+.lv-ok-text { color: var(--lv-ok); } .lv-l1-text { color: var(--lv-l1); } .lv-l2-text { color: var(--lv-l2); }
+.lv-l3-text { color: var(--lv-l3); } .lv-l4-text { color: var(--lv-l4); }
+.gauge { position: relative; margin: 14px 0 4px; }
+.gauge .segs { display: flex; height: 12px; border-radius: 6px; overflow: hidden; gap: 2px; }
+.gauge .seg { display: block; flex: 1; opacity: .35; }
+.ticks .here { text-decoration: underline; text-underline-offset: 3px; }
+.gauge .pin { position: absolute; top: -6px; width: 4px; height: 24px; margin-left: -2px; border-radius: 2px;
+  background: var(--fg); box-shadow: 0 0 0 2px var(--card); }
+.ticks { display: flex; justify-content: space-between; font-size: 11px; line-height: 1.3; text-align: center; font-weight: 600; }
+.ticks span { flex: 1; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 14px; }
+.gauge .seg.on { opacity: 1; }
+table.list td, table.list th, .badge { white-space: nowrap; }

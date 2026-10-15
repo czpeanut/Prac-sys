@@ -1,6 +1,6 @@
 // 出題與進度計算（純函式，不碰瀏覽器，tests/ 用 node 直接測）。
 //
-// 每日出題（預設 20 題，只從學生選的練習範圍裡出）：
+// 每日出題（一份 DAILY_N 題，做完可以再加；只從學生選的練習範圍裡出）：
 //   1. 先放「之前答錯、還沒再答對」的題目（最多 REVIEW_MAX 題，昨天以前的）
 //   2. 其餘依題型輪流抽：還沒熟練的題型每輪抽 2 題、已熟練的 1 題，
 //      弱的題型（正確率低、做得少）排前面；優先抽沒做過的題目，題型的新題用完才重出最久以前答對的題目
@@ -10,9 +10,16 @@
 //   答對題數＝答對過的「不同題目」數；近期正確率＝最近 RECENT 次作答的正確率
 //   熟練＝答對題數 ≥ MASTER_CORRECT 且近期正確率 ≥ MASTER_RATE
 // 單元進度＝已熟練的題型數／該單元的題型數（不含「其他題型」）。
+//
+// 每日進度與欠題（debt）：從 GOAL_START 起每天要完成 DAILY_GOAL 題。
+//   欠題＝過去每天應完成的總數 −（累計作答 − 今天算進今天的前 DAILY_GOAL 題）
+//   也就是今天先做滿今天的份，多做的才拿去還之前欠的；欠越多，量表等級越嚴重（DEBT_LEVELS）。
 
-export const DAILY_N = 20;
-export const REVIEW_MAX = 4;
+export const DAILY_N = 10;
+export const DAILY_GOAL = 10;
+export const GOAL_START = "2026-10-16";
+export const MAX_PER_DAY = 100;          // 一天最多出幾題（資料庫一列的上限）
+export const REVIEW_MAX = 3;
 export const RECENT = 5;
 export const MASTER_CORRECT = 4;
 export const MASTER_RATE = 0.8;
@@ -135,18 +142,64 @@ export function newSet(pool, student, day, rng = Math.random) {
   return { scope: [...student.scope], items: ids.map((id) => ({ q: id, unit: pool.byId[id].unit, type: pool.byId[id].type_code, r: null, ok: null, at: null })) };
 }
 
-// 換練習章節：今天已作答的題目保留，沒作答的換成新範圍的題目，總數仍是 DAILY_N
+const item = (pool, id) => ({ q: id, unit: pool.byId[id].unit, type: pool.byId[id].type_code, r: null, ok: null, at: null });
+
+// 換練習章節：今天已作答的題目保留，沒作答的換成新範圍的題目，總數不變
 export function rescope(pool, student, day, rng = Math.random) {
   const set = student.sets?.[day];
   if (!set) return newSet(pool, student, day, rng);
   const kept = set.items.filter((i) => i.r !== null);
+  const total = Math.max(set.items.length, DAILY_N);
   const recs = records(student);
-  const ids = choose(pool, student.scope, history(recs), typeStats(recs), day, DAILY_N - kept.length, rng, kept.map((i) => i.q));
-  return { scope: [...student.scope], items: [...kept, ...ids.map((id) => ({ q: id, unit: pool.byId[id].unit, type: pool.byId[id].type_code, r: null, ok: null, at: null }))] };
+  const ids = choose(pool, student.scope, history(recs), typeStats(recs), day, total - kept.length, rng, kept.map((i) => i.q));
+  return { scope: [...student.scope], items: [...kept, ...ids.map((id) => item(pool, id))] };
 }
 
+// 今天的題目做完後再加 n 題（多練、或補之前欠的）
+export function extend(pool, student, day, n = DAILY_N, rng = Math.random) {
+  const set = student.sets[day];
+  n = Math.min(n, MAX_PER_DAY - set.items.length);
+  if (n <= 0) return set;
+  const recs = records(student);
+  const ids = choose(pool, student.scope, history(recs), typeStats(recs), day, n, rng, set.items.map((i) => i.q));
+  return { ...set, items: [...set.items, ...ids.map((id) => item(pool, id))] };
+}
+
+// ─────────── 每日進度與欠題 ───────────
+
+// 欠題量表：欠題數 ≥ min 就是這一級（由輕到重）
+export const DEBT_LEVELS = [
+  { min: 0, key: "ok", label: "進度正常", note: "沒有欠題" },
+  { min: 1, key: "l1", label: "輕微落後", note: "欠不到一天的份" },
+  { min: 10, key: "l2", label: "注意", note: "欠 1～2 天的份" },
+  { min: 30, key: "l3", label: "嚴重落後", note: "欠 3～5 天的份" },
+  { min: 60, key: "l4", label: "非常嚴重", note: "欠 6 天以上的份" },
+];
+export const DEBT_SCALE_MAX = 80;       // 量表畫到這裡為滿格
+
+export function answeredOn(student, day) {
+  return (student.sets?.[day]?.items ?? []).filter((i) => i.ok !== null && i.ok !== undefined).length;
+}
+
+export function debt(student, day) {
+  const todayDone = day >= GOAL_START ? answeredOn(student, day) : 0;
+  let required = 0, done = 0;
+  for (let d = GOAL_START; d < day; d = addDays(d, 1)) {
+    required += DAILY_GOAL;
+    done += answeredOn(student, d);
+  }
+  const extra = Math.max(0, todayDone - DAILY_GOAL);      // 今天多做的拿去還之前欠的
+  const owed = Math.max(0, required - done - extra);
+  const level = [...DEBT_LEVELS].reverse().find((l) => owed >= l.min);
+  return {
+    started: day >= GOAL_START, owed, level,
+    todayDone, todayLeft: day >= GOAL_START ? Math.max(0, DAILY_GOAL - todayDone) : 0,
+  };
+}
+
+// 連續達標天數（每天作答 ≥ DAILY_GOAL），算到今天或昨天為止
 export function streak(student, day) {
-  const done = new Set(Object.entries(student.sets || {}).filter(([, s]) => s.items.some((i) => i.ok !== null)).map(([d]) => d));
+  const done = new Set(Object.keys(student.sets || {}).filter((d) => answeredOn(student, d) >= DAILY_GOAL));
   let d = done.has(day) ? day : addDays(day, -1), n = 0;
   while (done.has(d)) { n++; d = addDays(d, -1); }
   return n;
