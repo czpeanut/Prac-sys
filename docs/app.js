@@ -1,23 +1,27 @@
 // 每日練習前端（GitHub Pages 純靜態）：名字登入 → 今日 20 題 → 題型進度 → 練習範圍
-// 練習紀錄存在這台裝置的瀏覽器（localStorage），以名字區分。
+// 練習紀錄存在 Supabase（docs/config.js 有設定時），否則存在這台裝置的瀏覽器；見 store.js。
 import * as P from "./practice.js";
+import { online, store } from "./store.js";
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const KEY = "pracsys.v1";
-let pool, db, me, todaySet;
+let pool, me, todaySet;
 
 // ─────────── 紀錄 ───────────
-function load() {
-  try { return JSON.parse(localStorage.getItem(KEY)) || { current: null, students: {} }; }
-  catch { return { current: null, students: {} }; }
-}
-function save() {
-  try { localStorage.setItem(KEY, JSON.stringify(db)); }
-  catch { alert("這個瀏覽器無法儲存練習紀錄（可能是無痕模式），關掉頁面後紀錄會消失。"); }
+// 每次作答都把當天整份寫回；寫不進去就顯示提示，下一次寫入會一併補上（整份覆寫）。
+async function sync(what) {
+  try {
+    if (what === "scope") await store.saveScope(me);
+    else await store.saveSet(me, what);
+    $("#sync").hidden = true;
+    return true;
+  } catch (err) {
+    $("#sync").hidden = false;
+    $("#sync").textContent = `⚠ 紀錄沒有存進去（${err.message}）。請檢查網路，下一題作答時會再試一次。`;
+    return false;
+  }
 }
 const norm = (name) => name.replace(/\s+/g, " ").trim();
-const keyOf = (name) => norm(name).toLowerCase();
 
 // ─────────── 登入 ───────────
 function show(view) {
@@ -26,7 +30,7 @@ function show(view) {
   $("#who").hidden = view !== "main";
 }
 function renderKnown() {
-  const names = Object.values(db.students).map((s) => s.name);
+  const names = store.known();
   $("#known").innerHTML = names.length ? "這台裝置上的同學：" + names.map((n) =>
     `<button class="link pick" data-n="${esc(n)}">${esc(n)}</button>`).join("　") : "";
   document.querySelectorAll(".pick").forEach((b) => (b.onclick = () => enter(b.dataset.n)));
@@ -37,14 +41,22 @@ $("#login-form").onsubmit = (e) => {
   if (name.length < 1 || name.length > 20) { $("#login-err").textContent = "名字請填 1～20 個字"; return; }
   enter(name);
 };
-$("#logout").onclick = () => { db.current = null; save(); show("login"); $("#login-name").value = ""; renderKnown(); };
+$("#logout").onclick = () => { store.logout(); me = null; show("login"); $("#login-name").value = ""; renderKnown(); };
 
-function enter(name) {
-  const k = keyOf(name);
-  if (!db.students[k]) db.students[k] = { name: norm(name), scope: [pool.units[0].key], sets: {}, created: new Date().toISOString() };
-  db.current = k; save();
-  me = db.students[k];
+async function enter(name) {
+  const btn = $("#login-form button");
+  btn.disabled = true;
+  $("#login-err").textContent = "";
+  try { start(await store.login(name, [pool.units[0].key])); }
+  catch (err) { $("#login-err").textContent = err.message; }
+  finally { btn.disabled = false; }
+}
+
+function start(student) {
+  me = student;
+  me.sets ||= {};
   $("#who-name").textContent = me.name;
+  $("#backup-card").hidden = online;
   show("main"); tab("today");
 }
 
@@ -64,7 +76,7 @@ const stars = (d) => (d ? "★".repeat(d) + "☆".repeat(5 - d) : "");
 
 function loadToday() {
   const day = P.today();
-  if (!me.sets[day]) { me.sets[day] = P.newSet(pool, me, day); save(); }
+  if (!me.sets[day]) { me.sets[day] = P.newSet(pool, me, day); sync(day); }
   todaySet = me.sets[day];
   $("#today-day").textContent = `${day} 的練習`;
   $("#today-scope").textContent = "範圍：" + todaySet.scope.map(unitName).join("、");
@@ -120,7 +132,7 @@ function card(it, idx) {
   if (submit) submit.onclick = () => {
     if (!choice) return;
     Object.assign(it, { r: choice, ok: q.answer.includes(choice), at: new Date().toISOString() });
-    save();
+    sync(P.today());
     el.replaceWith(card(it, idx));
     summary();
   };
@@ -166,7 +178,7 @@ function loadScope() {
       <span><b>${esc(u.book)} ${esc(u.code)}</b> ${esc(u.title)}<br><span class="muted small">${u.types.length} 個題型、${u.n} 題</span></span>
     </label>`).join("");
 }
-$("#scope-save").onclick = () => {
+$("#scope-save").onclick = async () => {
   const units = [...document.querySelectorAll("#scope-list input:checked")].map((x) => x.value);
   if (!units.length) { $("#scope-msg").textContent = "至少要選一個單元"; return; }
   me.scope = units;
@@ -176,13 +188,15 @@ $("#scope-save").onclick = () => {
   } else {
     me.sets[day] = P.newSet(pool, me, day);
     $("#scope-msg").textContent = "已儲存，今天的題目已依新範圍重新出題。";
+    await sync(day);
   }
-  save();
+  if (!(await sync("scope"))) $("#scope-msg").textContent = "沒有存進去，請檢查網路後再按一次。";
 };
 
 // ─────────── 備份 ───────────
 $("#backup").onclick = () => {
-  const blob = new Blob([JSON.stringify({ [keyOf(me.name)]: me }, null, 1)], { type: "application/json" });
+  const { id, ...rest } = me;
+  const blob = new Blob([JSON.stringify({ [id]: rest }, null, 1)], { type: "application/json" });
   const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: `練習紀錄_${me.name}_${P.today()}.json` });
   a.click();
   URL.revokeObjectURL(a.href);
@@ -192,13 +206,12 @@ $("#restore").onchange = async (e) => {
   if (!f) return;
   try {
     const data = JSON.parse(await f.text());
-    for (const [k, s] of Object.entries(data)) {
+    for (const s of Object.values(data)) {
       if (!s || typeof s.name !== "string" || typeof s.sets !== "object" || !Array.isArray(s.scope)) throw new Error();
-      db.students[k] = s;
     }
-    save();
+    store.restore(data);
     $("#scope-msg").textContent = `已還原：${Object.values(data).map((s) => s.name).join("、")}`;
-    if (db.students[db.current]) me = db.students[db.current];
+    if (data[me.id]) me = { id: me.id, ...data[me.id] };
   } catch { $("#scope-msg").textContent = "檔案格式不對，沒有還原。"; }
   e.target.value = "";
 };
@@ -207,7 +220,9 @@ $("#restore").onchange = async (e) => {
 (async () => {
   const raw = await fetch("pool.json").then((r) => r.json());
   pool = { ...raw, byId: Object.fromEntries(raw.questions.map((q) => [q.id, q])) };
-  db = load();
-  if (db.current && db.students[db.current]) return enter(db.students[db.current].name);
+  try {
+    const s = await store.resume();
+    if (s) return start(s);
+  } catch (err) { $("#login-err").textContent = `連不上資料庫：${err.message}`; }
   show("login"); renderKnown();
 })();

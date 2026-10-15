@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>練習總覽</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top"><h1>練習總覽（老師）</h1><a href="./" class="small">學生頁面</a></header>
+<main>
+  <form id="f" class="card" style="display:flex;gap:8px">
+    <input id="key" type="password" placeholder="老師密碼" required autocomplete="current-password">
+    <button class="primary" style="flex:none">查看</button>
+  </form>
+  <p id="err" class="err"></p>
+  <div id="out"></div>
+  <div id="detail"></div>
+</main>
+<script type="module">
+import * as P from "./practice.js";
+import { online, overview } from "./store.js";
+
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+let pool, students = [];
+
+if (!online) $("#err").textContent = "還沒有設定 Supabase（docs/config.js），練習紀錄存在各學生的裝置上，無法總覽。";
+
+$("#f").onsubmit = async (e) => {
+  e.preventDefault();
+  $("#err").textContent = "";
+  try {
+    if (!pool) {
+      const raw = await fetch("pool.json").then((r) => r.json());
+      pool = { ...raw, byId: Object.fromEntries(raw.questions.map((q) => [q.id, q])) };
+    }
+    students = await overview($("#key").value);
+  } catch (err) { $("#err").textContent = err.message; return; }
+  const day = P.today();
+  const head = pool.units.map((u) => `<th title="${esc(u.title)}">${esc(u.code)}</th>`).join("");
+  const rows = students.map((s, i) => {
+    const p = P.progress(pool, s, day);
+    const total = p.units.reduce((a, u) => a + u.attempts, 0);
+    const right = P.records(s).filter((r) => r.ok).length;
+    return `<tr><td><button class="link" data-i="${i}">${esc(s.name)}</button></td>
+      <td>${p.mastered}／${p.typeCount}</td>
+      ${p.units.map((u) => `<td>${u.mastered}／${u.typeCount}<div class="muted small">${u.attempts} 題</div></td>`).join("")}
+      <td>${total}<div class="muted small">${total ? Math.round((100 * right) / total) : 0}%</div></td>
+      <td>${p.streak} 天</td><td>${esc(p.days[0]?.day ?? "—")}</td></tr>`;
+  }).join("");
+  $("#out").innerHTML = `<div class="card scroll"><p class="muted small">各單元：已熟練題型／題型數，下方為累計作答題數。點名字看各題型細節。</p>
+    <table class="list"><tr><th>學生</th><th>熟練題型</th>${head}<th>作答／正確率</th><th>連續</th><th>最近練習</th></tr>${rows ||
+    '<tr><td colspan="99" class="muted">還沒有學生</td></tr>'}</table></div>`;
+  $("#detail").innerHTML = "";
+  document.querySelectorAll("[data-i]").forEach((b) => (b.onclick = () => detail(students[b.dataset.i])));
+};
+
+function detail(s) {
+  const p = P.progress(pool, s, P.today());
+  $("#detail").innerHTML = `<h2>${esc(s.name)}</h2>` + p.units.map((u) => `<div class="card unit">
+    <h3><span>${esc(u.book)} ${esc(u.code)} ${esc(u.title)}</span><span class="muted small">熟練 ${u.mastered}／${u.typeCount}</span></h3>
+    <div class="scroll"><table class="types"><tr><th>題型</th><th>答對／作答</th><th>近 5 題</th><th></th></tr>
+    ${u.types.map((t) => `<tr><td>${esc(t.name)}</td><td class="n">${t.correct}／${t.attempts}</td>
+      <td class="n">${t.rate === null ? "—" : Math.round(t.rate * 100) + "%"}</td>
+      <td><span class="tag ${{ 未練習: "s0", 練習中: "s1", 已熟練: "s2" }[t.status]}">${t.status}</span></td></tr>`).join("")}
+    </table></div></div>`).join("");
+  $("#detail").scrollIntoView({ behavior: "smooth" });
+}
+</script>
+</body>
+</html>

@@ -2,7 +2,7 @@
 
 給學生每天練習 20 題的小網頁，部署在 GitHub Pages（純靜態，`docs/` 目錄）。
 題目取自 [OLE-QS](https://github.com/czpeanut/OLE-QS) 題庫（**唯讀**，不寫回），
-練習進度用 OLE-QS 的**數學題型分類**計算，學生用名字登入。
+練習進度用 OLE-QS 的**數學題型分類**計算，學生用名字登入，練習紀錄存在 **Supabase**。
 
 目前範圍：**國二上學期（八上）2-2 ～ 4-1，純文字單選題**（帶圖的題目、填充題之後再逐步加入）
 
@@ -32,13 +32,30 @@ Source 選 **Deploy from a branch**，Branch 選預設分支、資料夾選 **/d
 - **練習範圍**：勾選要練的單元（分章節）。新學生預設從 2-2 開始；今天還沒作答前改範圍會立即重新出題。
 - **練習進度**：每個單元、每個題型的答對／作答數、近 5 題正確率與狀態（未練習／練習中／已熟練）。
 
-### 練習紀錄存在哪裡
+- **老師總覽**（`teacher.html`）：輸入老師密碼，看全班各單元的熟練題型數、作答數、正確率、連續練習天數，點名字看各題型細節。
 
-GitHub Pages 只能放靜態檔案，沒有伺服器，所以目前紀錄存在**學生自己裝置的瀏覽器**（localStorage），以名字區分：
+## 練習紀錄資料庫（Supabase）
 
-- 同一台裝置可以多位同學輪流用，登入畫面會列出這台裝置上的名字
-- 換裝置、清除瀏覽器資料、無痕模式都會看不到紀錄 —— 「練習範圍」頁可以下載備份、之後還原
-- 老師目前看不到全班的進度；要集中記錄需要接一個線上資料庫（例如 OLE-QS 已在用的 Supabase），是下一步
+GitHub Pages 只能放靜態檔案，網頁直接用 Supabase 的 anon 金鑰呼叫資料庫函式。設定步驟：
+
+1. 建一個 Supabase 專案（免費方案即可；也可以和 OLE-QS 共用同一個專案，資料表都以 `pracsys_` 開頭）
+2. SQL Editor 貼上 [`supabase/schema.sql`](supabase/schema.sql) 執行（可重複執行），再設定老師密碼：
+   ```sql
+   select pracsys_set_teacher_key('換成老師密碼');
+   ```
+3. Project Settings → API 取得 Project URL 與 **anon / publishable** 金鑰，填進 [`docs/config.js`](docs/config.js)，推上 GitHub。
+   **不要填 service_role / secret 金鑰**——它會公開在網頁上。
+
+資料表：`pracsys_student`（名字、練習範圍）、`pracsys_set`（每人每天一列，當天 20 題與作答）、`pracsys_config`（老師密碼的 bcrypt 雜湊）。
+
+安全設計：
+
+- 資料表全開 RLS 且沒有任何 policy，anon 金鑰**不能直接讀寫資料表**，只能呼叫 `pracsys_login`、`pracsys_get`、
+  `pracsys_save_set`、`pracsys_save_scope`、`pracsys_overview` 這幾個函式
+- 全班紀錄只有 `pracsys_overview` 拿得到，要老師密碼；設定老師密碼的函式網頁呼叫不到
+- 學生只用名字登入、沒有密碼：知道某位同學的名字就能用他的名字作答。適合班級內練習；需要更嚴格可再加座號或密碼
+
+`docs/config.js` 留空時改存在學生裝置的瀏覽器（localStorage），換裝置就看不到紀錄，「練習範圍」頁可下載備份與還原；老師總覽不能用。
 
 ### 出題規則（`docs/practice.js`）
 
@@ -84,7 +101,10 @@ python scripts/build_pool.py --oleqs ../OLE-QS --units 8-1_2-2,8-1_2-3,8-1_3-1,8
 
 ```
 docs/index.html, app.js, style.css   網頁（GitHub Pages 從這裡發布）
+docs/teacher.html                    老師總覽
 docs/practice.js                     出題、題型進度（純函式）
+docs/store.js, config.js             練習紀錄存取（Supabase／本機）、連線設定
+supabase/schema.sql                  資料庫結構與函式
 docs/pool.json, math.css             題目池、公式樣式（build_pool.py 產生）
 scripts/build_pool.py                從 OLE-QS 產生題目池
 tests/practice.test.mjs              測試：node --test tests/practice.test.mjs

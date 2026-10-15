@@ -29,6 +29,7 @@
 
   <!-- 主畫面 -->
   <div id="v-main" hidden>
+    <p id="sync" class="card err" hidden></p>
     <nav class="tabs">
       <button data-tab="today" class="on">今日練習</button>
       <button data-tab="progress">練習進度</button>
@@ -63,7 +64,7 @@
         <button class="primary" id="scope-save">儲存範圍</button>
         <p id="scope-msg" class="muted"></p>
       </div>
-      <div class="card">
+      <div class="card" id="backup-card">
         <h3>練習紀錄備份</h3>
         <p class="muted small">紀錄存在這台裝置的瀏覽器裡。換裝置或清除瀏覽器資料前，先下載備份，之後再還原。</p>
         <div class="actions">
