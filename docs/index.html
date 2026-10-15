@@ -17,14 +17,20 @@
 <main>
   <!-- 登入 -->
   <section id="v-login" class="card narrow" hidden>
-    <h2>輸入你的名字</h2>
-    <p class="muted">用名字記錄練習進度。下次在這台裝置用同一個名字就能接著練。</p>
-    <form id="login-form">
-      <input id="login-name" maxlength="20" placeholder="例如：王小明" autocomplete="name" required>
+    <h2 id="login-title">選擇你的名字</h2>
+    <form id="pick-form" class="row" hidden>
+      <select id="pick-name" required><option value="">— 請選擇 —</option></select>
       <button class="primary">開始</button>
     </form>
+    <p id="login-loading" class="muted">載入名單中…</p>
+    <div id="new-wrap" hidden>
+      <p class="muted small" id="new-hint">第一次練習？輸入你的名字（之後就會出現在上面的選單裡）</p>
+      <form id="login-form" class="row">
+        <input id="login-name" maxlength="20" placeholder="例如：王小明" autocomplete="off" required>
+        <button class="primary">新增並開始</button>
+      </form>
+    </div>
     <p id="login-err" class="err"></p>
-    <p id="known" class="small"></p>
   </section>
 
   <!-- 主畫面 -->

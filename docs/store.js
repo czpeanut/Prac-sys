@@ -23,7 +23,7 @@ async function rpc(fn, args) {
   });
   const text = await r.text();
   const data = text ? JSON.parse(text) : null;
-  if (data?.code === "PGRST202") throw new Error("資料庫還沒建立，請老師在 Supabase 執行 supabase/schema.sql");
+  if (data?.code === "PGRST202") throw new Error("資料庫還沒建立（或不是最新版），請老師在 Supabase 執行 supabase/schema.sql");
   if (!r.ok) throw new Error(data?.message || `資料庫錯誤 ${r.status}`);
   return data;
 }
@@ -31,7 +31,7 @@ async function rpc(fn, args) {
 // ─────────── 本機模式 ───────────
 const local = {
   db() { return readLocal(LOCAL, { current: null, students: {} }); },
-  known() { return Object.values(this.db().students).map((s) => s.name); },
+  async known() { return Object.values(this.db().students).map((s) => s.name).sort((a, b) => a.localeCompare(b, "zh-Hant")); },
   async resume() {
     const db = this.db();
     return db.current && db.students[db.current] ? { id: db.current, ...db.students[db.current] } : null;
@@ -61,7 +61,13 @@ const local = {
 
 // ─────────── 線上模式（Supabase） ───────────
 const remote = {
-  known() { return []; },
+  async known() {
+    try { return await rpc("pracsys_names", {}); }
+    catch (err) {
+      if (/還沒建立/.test(err.message)) return [];   // 舊版資料庫沒有名單函式：只顯示輸入框
+      throw err;
+    }
+  },
   async resume() {
     const id = readLocal(SESSION, null);
     if (!id) return null;

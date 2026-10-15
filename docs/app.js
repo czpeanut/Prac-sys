@@ -29,27 +29,41 @@ function show(view) {
   $("#v-main").hidden = view !== "main";
   $("#who").hidden = view !== "main";
 }
-function renderKnown() {
-  const names = store.known();
-  $("#known").innerHTML = names.length ? "這台裝置上的同學：" + names.map((n) =>
-    `<button class="link pick" data-n="${esc(n)}">${esc(n)}</button>`).join("　") : "";
-  document.querySelectorAll(".pick").forEach((b) => (b.onclick = () => enter(b.dataset.n)));
+// 登入畫面：既有的名字用選單選，第一次練習的人另外輸入名字
+let knownNames = [];
+async function renderKnown() {
+  $("#login-loading").hidden = false;
+  try { knownNames = await store.known(); }
+  catch (err) { knownNames = []; $("#login-err").textContent = `讀不到名單：${err.message}`; }
+  $("#login-loading").hidden = true;
+  const has = knownNames.length > 0;
+  $("#pick-name").innerHTML = '<option value="">— 請選擇 —</option>' +
+    knownNames.map((n) => `<option value="${esc(n)}">${esc(n)}</option>`).join("");
+  $("#pick-form").hidden = !has;
+  $("#login-title").textContent = has ? "選擇你的名字" : "輸入你的名字";
+  $("#new-hint").hidden = !has;
+  $("#new-wrap").hidden = false;
 }
+$("#pick-form").onsubmit = (e) => {
+  e.preventDefault();
+  if ($("#pick-name").value) enter($("#pick-name").value, e.submitter);
+};
 $("#login-form").onsubmit = (e) => {
   e.preventDefault();
   const name = norm($("#login-name").value);
   if (name.length < 1 || name.length > 20) { $("#login-err").textContent = "名字請填 1～20 個字"; return; }
-  enter(name);
+  // 已經在名單上的名字（不分大小寫、空白）直接當成同一個人
+  const same = knownNames.find((n) => norm(n).toLowerCase() === name.toLowerCase());
+  enter(same ?? name, e.submitter);
 };
 $("#logout").onclick = () => { store.logout(); me = null; show("login"); $("#login-name").value = ""; renderKnown(); };
 
-async function enter(name) {
-  const btn = $("#login-form button");
-  btn.disabled = true;
+async function enter(name, btn) {
+  if (btn) btn.disabled = true;
   $("#login-err").textContent = "";
   try { start(await store.login(name, [pool.units[0].key])); }
   catch (err) { $("#login-err").textContent = err.message; }
-  finally { btn.disabled = false; }
+  finally { if (btn) btn.disabled = false; }
 }
 
 function start(student) {

@@ -60,6 +60,12 @@ begin
   return json_build_object('id', s.id, 'name', s.name, 'scope', s.scope);
 end $$;
 
+-- 登入畫面的名字選單：只回傳名字
+create or replace function pracsys_names()
+returns json language sql stable security definer set search_path = public, extensions as $$
+  select coalesce(json_agg(name order by name), '[]'::json) from pracsys_student
+$$;
+
 -- 讀一個學生的資料與全部練習
 create or replace function pracsys_get(p_student uuid)
 returns json language sql stable security definer set search_path = public, extensions as $$
@@ -123,8 +129,8 @@ $$;
 
 -- Supabase 預設會把 public schema 新建的函式直接授權給 anon、authenticated，
 -- 所以除了 public 也要明確收回，否則網頁也能呼叫 pracsys_set_teacher_key 改掉老師密碼
-revoke all on function pracsys_norm(text), pracsys_login(text, jsonb), pracsys_get(uuid), pracsys_save_scope(uuid, jsonb),
+revoke all on function pracsys_norm(text), pracsys_names(), pracsys_login(text, jsonb), pracsys_get(uuid), pracsys_save_scope(uuid, jsonb),
   pracsys_save_set(uuid, date, jsonb, jsonb), pracsys_overview(text), pracsys_set_teacher_key(text)
   from public, anon, authenticated;
-grant execute on function pracsys_login(text, jsonb), pracsys_get(uuid), pracsys_save_scope(uuid, jsonb),
+grant execute on function pracsys_names(), pracsys_login(text, jsonb), pracsys_get(uuid), pracsys_save_scope(uuid, jsonb),
   pracsys_save_set(uuid, date, jsonb, jsonb), pracsys_overview(text) to anon, authenticated;
