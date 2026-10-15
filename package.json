@@ -1,0 +1,8 @@
+{
+  "name": "prac-sys",
+  "private": true,
+  "description": "建置題目池時用 KaTeX 把公式預先排版（scripts/katex_render.mjs）",
+  "type": "module",
+  "scripts": { "test": "node --test tests/practice.test.mjs" },
+  "devDependencies": { "katex": "0.16.11" }
+}

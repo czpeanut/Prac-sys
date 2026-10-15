@@ -54,3 +54,17 @@ test("熟練規則與進度、連續天數", () => {
   assert.equal(p.streak, 2);
   assert.equal(P.today(new Date("2026-10-15T17:00:00Z")), "2026-10-16");   // 台灣時間已過午夜
 });
+
+test("換章節：已作答的保留，其餘換成新範圍，總數 20", () => {
+  const units = pool.units.map((u) => u.key);
+  const me = { scope: [units[0]], sets: {} };
+  me.sets["2026-10-15"] = P.newSet(pool, me, "2026-10-15", P.seeded(4));
+  const done = me.sets["2026-10-15"].items.slice(0, 3);
+  done.forEach((it, i) => Object.assign(it, { r: "A", ok: i === 0, at: `2026-10-15T0${i}` }));
+  me.scope = [units[2], units[4]];
+  const s = P.rescope(pool, me, "2026-10-15", P.seeded(5));
+  assert.equal(s.items.length, 20);
+  assert.deepEqual(s.items.slice(0, 3).map((i) => i.q), done.map((i) => i.q));
+  assert.ok(s.items.slice(3).every((i) => [units[2], units[4]].includes(i.unit) && i.r === null));
+  assert.equal(new Set(s.items.map((i) => i.q)).size, 20);
+});

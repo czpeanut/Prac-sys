@@ -82,3 +82,11 @@ table.list { width: 100%; border-collapse: collapse; font-size: 15px; }
 table.list td, table.list th { padding: 6px; border-top: 1px solid var(--line); text-align: left; }
 .scroll { overflow-x: auto; }
 .filebtn { display: inline-block; cursor: pointer; border-radius: 8px; border: 1px solid var(--line); padding: 6px 14px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { display: flex; gap: 6px; align-items: center; border: 1px solid var(--line); border-radius: 999px;
+  padding: 4px 12px; cursor: pointer; user-select: none; font-size: 15px; }
+.chip input { width: auto; margin: 0; }
+.chip:has(input:checked) { border-color: var(--accent); background: var(--accent-bg); color: var(--accent); }
+.chip .muted { font-size: 12px; }
+.stem .katex, .opt .katex { font-size: 1.08em; }
+.stem, .opt > .oc { overflow-x: auto; overflow-y: hidden; min-width: 0; padding: 2px 0; }

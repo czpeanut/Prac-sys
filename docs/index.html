@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>每日數學練習</title>
 <link rel="icon" href="data:,">
-<link rel="stylesheet" href="math.css">
+<link rel="stylesheet" href="katex/katex.min.css">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -39,10 +39,15 @@
     <nav class="tabs">
       <button data-tab="today" class="on">今日練習</button>
       <button data-tab="progress">練習進度</button>
-      <button data-tab="scope">練習範圍</button>
     </nav>
 
     <section id="t-today">
+      <div class="card">
+        <h3>練習章節 <span class="muted small">（可複選，會優先出還不熟練的題型）</span></h3>
+        <div id="chapters" class="chips"></div>
+        <div class="actions"><button class="primary" id="scope-save" disabled>換成這些章節</button>
+          <span id="scope-msg" class="muted small"></span></div>
+      </div>
       <div class="card summary">
         <div><b id="today-day"></b>　<span id="today-scope" class="muted"></span></div>
         <div class="bar"><i id="today-bar"></i></div>
@@ -60,16 +65,6 @@
         <div id="prog-days" class="days"></div>
       </div>
       <p class="muted small">題型熟練：答對 4 題以上，且最近 5 次作答答對 80% 以上。單元進度＝已熟練的題型數／題型數（「其他題型」不計）。</p>
-    </section>
-
-    <section id="t-scope" hidden>
-      <div class="card">
-        <h3>選擇要練習的單元</h3>
-        <p class="muted">每天的 20 題只從勾選的單元出，會優先出還不熟練的題型。</p>
-        <div id="scope-list"></div>
-        <button class="primary" id="scope-save">儲存範圍</button>
-        <p id="scope-msg" class="muted"></p>
-      </div>
       <div class="card" id="backup-card">
         <h3>練習紀錄備份</h3>
         <p class="muted small">紀錄存在這台裝置的瀏覽器裡。換裝置或清除瀏覽器資料前，先下載備份，之後再還原。</p>
@@ -77,6 +72,7 @@
           <button id="backup">下載我的紀錄</button>
           <label class="filebtn">還原紀錄<input type="file" id="restore" accept="application/json,.json" hidden></label>
         </div>
+        <p id="backup-msg" class="muted small"></p>
       </div>
     </section>
   </div>

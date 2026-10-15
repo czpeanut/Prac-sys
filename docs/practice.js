@@ -85,7 +85,7 @@ export function history(recs) {
   return h;
 }
 
-export function choose(pool, scope, hist, stats, day, n = DAILY_N, rng = Math.random) {
+export function choose(pool, scope, hist, stats, day, n = DAILY_N, rng = Math.random, exclude = []) {
   const unitKeys = pool.units.map((u) => u.key);
   scope = unitKeys.filter((u) => scope.includes(u));
   if (!scope.length) scope = unitKeys.slice(0, 1);
@@ -93,9 +93,10 @@ export function choose(pool, scope, hist, stats, day, n = DAILY_N, rng = Math.ra
   const inScope = pool.questions.filter((q) => scope.includes(q.unit)).map((q) => q.id);
   const last = (id) => hist.get(id)?.at(-1);
   const picked = [];
+  const skip = new Set(exclude);
 
   // 1. 答錯還沒再答對的題目，隔天以後再出一次
-  const wrong = inScope.filter((id) => last(id) && !last(id).ok && last(id).day < day)
+  const wrong = inScope.filter((id) => !skip.has(id) && last(id) && !last(id).ok && last(id).day < day)
     .sort((a, b) => (last(a).day < last(b).day ? -1 : 1));
   picked.push(...wrong.slice(0, Math.min(REVIEW_MAX, n)));
 
@@ -103,7 +104,7 @@ export function choose(pool, scope, hist, stats, day, n = DAILY_N, rng = Math.ra
   const queues = new Map();
   for (const u of scope) {
     for (const t of pool.units.find((x) => x.key === u).types) {
-      const ids = pool.questions.filter((q) => q.unit === u && q.type_code === t.code && !picked.includes(q.id)).map((q) => q.id);
+      const ids = pool.questions.filter((q) => q.unit === u && q.type_code === t.code && !picked.includes(q.id) && !skip.has(q.id)).map((q) => q.id);
       const fresh = shuffle(ids.filter((id) => !hist.has(id)), rng);
       const old = ids.filter((id) => hist.has(id) && last(id).ok).sort((a, b) => (last(a).day < last(b).day ? -1 : 1));
       queues.set(`${u}|${t.code}`, [...fresh, ...old]);
@@ -132,6 +133,16 @@ export function newSet(pool, student, day, rng = Math.random) {
   const recs = records(student);
   const ids = choose(pool, student.scope, history(recs), typeStats(recs), day, DAILY_N, rng);
   return { scope: [...student.scope], items: ids.map((id) => ({ q: id, unit: pool.byId[id].unit, type: pool.byId[id].type_code, r: null, ok: null, at: null })) };
+}
+
+// 換練習章節：今天已作答的題目保留，沒作答的換成新範圍的題目，總數仍是 DAILY_N
+export function rescope(pool, student, day, rng = Math.random) {
+  const set = student.sets?.[day];
+  if (!set) return newSet(pool, student, day, rng);
+  const kept = set.items.filter((i) => i.r !== null);
+  const recs = records(student);
+  const ids = choose(pool, student.scope, history(recs), typeStats(recs), day, DAILY_N - kept.length, rng, kept.map((i) => i.q));
+  return { scope: [...student.scope], items: [...kept, ...ids.map((id) => ({ q: id, unit: pool.byId[id].unit, type: pool.byId[id].type_code, r: null, ok: null, at: null }))] };
 }
 
 export function streak(student, day) {

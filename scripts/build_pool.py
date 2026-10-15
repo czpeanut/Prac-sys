@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""從 OLE-QS 題庫（唯讀）產生每日練習的題目池 docs/pool.json（與公式樣式 docs/math.css）。
+"""從 OLE-QS 題庫（唯讀）產生每日練習的題目池 docs/pool.json。
+
+公式用 KaTeX 預先排版（scripts/katex_render.mjs，要先 npm install），網頁只需要 KaTeX 的 CSS 與字型（docs/katex/）。
 
     python scripts/build_pool.py --oleqs ../OLE-QS
     python scripts/build_pool.py --oleqs ../OLE-QS --units 8-1_2-2,8-1_2-3   # 改範圍
@@ -24,7 +26,10 @@ import argparse
 import collections
 import hashlib
 import json
+import html
 import re
+import shutil
+import subprocess
 import sys
 import tarfile
 from datetime import datetime, timezone
@@ -88,7 +93,10 @@ def main() -> None:
     oleqs = args.oleqs.resolve()
     sys.dont_write_bytecode = True       # 唯讀：不在 OLE-QS 裡留下 __pycache__
     sys.path.insert(0, str(oleqs))
-    from apps.api.mathfmt import MATH_CSS, render  # noqa: E402
+    from apps.api import mathfmt  # noqa: E402
+    # 沿用 OLE-QS 的 Markdown 處理（逸出、粗體、表格、換行），公式則只標出原文，交給 KaTeX 排版
+    mathfmt.latex_to_html = lambda tex: f'<span class="tex">{html.escape(tex)}</span>'
+    render = mathfmt.render
     from apps.api.quality import evaluate  # noqa: E402
 
     units = [u.strip() for u in args.units.split(",") if u.strip()]
@@ -175,7 +183,16 @@ def main() -> None:
             "source": "OLE-QS", "units": unit_meta, "questions": questions}
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(pool, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
-    (args.out.parent / "math.css").write_text(MATH_CSS.lstrip(), encoding="utf-8")
+    subprocess.run(["node", str(REPO / "scripts/katex_render.mjs"), str(args.out)], check=True)
+    # KaTeX 的樣式與字型放進網站（只帶 woff2，現代瀏覽器都支援）
+    dist = REPO / "node_modules/katex/dist"
+    kdir = args.out.parent / "katex"
+    shutil.rmtree(kdir, ignore_errors=True)
+    (kdir / "fonts").mkdir(parents=True)
+    shutil.copy(dist / "katex.min.css", kdir)
+    for f in (dist / "fonts").glob("*.woff2"):
+        shutil.copy(f, kdir / "fonts")
+    (args.out.parent / "math.css").unlink(missing_ok=True)
 
     print(f"題目池 {len(questions)} 題 → {args.out}")
     for m in unit_meta:

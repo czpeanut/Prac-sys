@@ -78,8 +78,8 @@ function start(student) {
 document.querySelectorAll(".tabs button").forEach((b) => (b.onclick = () => tab(b.dataset.tab)));
 function tab(name) {
   document.querySelectorAll(".tabs button").forEach((b) => b.classList.toggle("on", b.dataset.tab === name));
-  for (const t of ["today", "progress", "scope"]) $(`#t-${t}`).hidden = t !== name;
-  ({ today: loadToday, progress: loadProgress, scope: loadScope })[name]();
+  for (const t of ["today", "progress"]) $(`#t-${t}`).hidden = t !== name;
+  ({ today: loadToday, progress: loadProgress })[name]();
 }
 window.tab = tab;
 
@@ -97,6 +97,7 @@ function loadToday() {
   $("#items").innerHTML = "";
   todaySet.items.forEach((it, i) => $("#items").appendChild(card(it, i)));
   summary();
+  renderChapters();
 }
 
 function summary() {
@@ -126,7 +127,7 @@ function card(it, idx) {
       else if (it.r === o.label) cls += " wrong";
     }
     return `<button class="${cls}" data-l="${esc(o.label)}" ${answered ? "disabled" : ""}>
-      <span class="ol">(${esc(o.label)})</span><span>${o.html}</span></button>`;
+      <span class="ol">(${esc(o.label)})</span><span class="oc">${o.html}</span></button>`;
   }).join("");
   const result = !answered ? `<div class="actions"><button class="primary submit" disabled>送出</button></div>`
     : it.ok ? `<div class="result ok">✔ 答對了！</div>`
@@ -184,27 +185,31 @@ function loadProgress() {
     : '<span class="muted">還沒有紀錄</span>';
 }
 
-// ─────────── 練習範圍 ───────────
-function loadScope() {
-  $("#scope-msg").textContent = "";
-  $("#scope-list").innerHTML = pool.units.map((u) => `<label class="scope-row">
-      <input type="checkbox" value="${esc(u.key)}" ${me.scope.includes(u.key) ? "checked" : ""}>
-      <span><b>${esc(u.book)} ${esc(u.code)}</b> ${esc(u.title)}<br><span class="muted small">${u.types.length} 個題型、${u.n} 題</span></span>
-    </label>`).join("");
+// ─────────── 練習章節 ───────────
+const picked = () => [...document.querySelectorAll("#chapters input:checked")].map((x) => x.value);
+function renderChapters() {
+  $("#chapters").innerHTML = pool.units.map((u) => `<label class="chip" title="${esc(u.title)}（${u.n} 題）">
+      <input type="checkbox" value="${esc(u.key)}" ${todaySet.scope.includes(u.key) ? "checked" : ""}>
+      <span><b>${esc(u.code)}</b> ${esc(u.title)}</span></label>`).join("");
+  $("#scope-save").disabled = true;
+  document.querySelectorAll("#chapters input").forEach((x) => (x.onchange = () => {
+    const units = picked();
+    const same = units.length === todaySet.scope.length && units.every((u) => todaySet.scope.includes(u));
+    $("#scope-save").disabled = !units.length || same;
+    $("#scope-msg").textContent = units.length ? "" : "至少要選一個章節";
+  }));
 }
 $("#scope-save").onclick = async () => {
-  const units = [...document.querySelectorAll("#scope-list input:checked")].map((x) => x.value);
-  if (!units.length) { $("#scope-msg").textContent = "至少要選一個單元"; return; }
+  const units = pool.units.map((u) => u.key).filter((k) => picked().includes(k));
+  if (!units.length) return;
   me.scope = units;
-  const day = P.today(), set = me.sets[day];
-  if (set && set.items.some((i) => i.r !== null)) {
-    $("#scope-msg").textContent = "已儲存。今天已經開始作答，明天才會依新範圍出題。";
-  } else {
-    me.sets[day] = P.newSet(pool, me, day);
-    $("#scope-msg").textContent = "已儲存，今天的題目已依新範圍重新出題。";
-    await sync(day);
-  }
-  if (!(await sync("scope"))) $("#scope-msg").textContent = "沒有存進去，請檢查網路後再按一次。";
+  const day = P.today();
+  const kept = (me.sets[day]?.items ?? []).filter((i) => i.r !== null).length;
+  me.sets[day] = P.rescope(pool, me, day);
+  loadToday();
+  $("#scope-msg").textContent = kept ? `已作答的 ${kept} 題保留，其餘換成新章節的題目。` : "已換成新章節的題目。";
+  const ok = (await sync(day)) && (await sync("scope"));
+  if (!ok) $("#scope-msg").textContent = "沒有存進去，請檢查網路後再按一次。";
 };
 
 // ─────────── 備份 ───────────
@@ -224,9 +229,9 @@ $("#restore").onchange = async (e) => {
       if (!s || typeof s.name !== "string" || typeof s.sets !== "object" || !Array.isArray(s.scope)) throw new Error();
     }
     store.restore(data);
-    $("#scope-msg").textContent = `已還原：${Object.values(data).map((s) => s.name).join("、")}`;
+    $("#backup-msg").textContent = `已還原：${Object.values(data).map((s) => s.name).join("、")}`;
     if (data[me.id]) me = { id: me.id, ...data[me.id] };
-  } catch { $("#scope-msg").textContent = "檔案格式不對，沒有還原。"; }
+  } catch { $("#backup-msg").textContent = "檔案格式不對，沒有還原。"; }
   e.target.value = "";
 };
 

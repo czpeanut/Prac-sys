@@ -28,8 +28,10 @@ Source 選 **Deploy from a branch**，Branch 選預設分支、資料夾選 **/d
 ## 使用方式
 
 - **名字登入**：輸入名字就開始，同一個名字就是同一個人（不分大小寫）。
+- **名字選單**：已經練習過的同學從下拉選單選名字；第一次練習的人輸入名字新增。
+- **練習章節**：今日練習頁最上方勾選 2-2、2-3、3-1、3-2、4-1（可複選），按「換成這些章節」立即換題 ——
+  今天已作答的題目保留，其餘換成新章節的題目，總數仍是 20 題。新學生預設從 2-2 開始。
 - **今日練習**：每人每天一份 20 題，當天重開還是同一份；選好選項按「送出」直接判對錯。
-- **練習範圍**：勾選要練的單元（分章節）。新學生預設從 2-2 開始；今天還沒作答前改範圍會立即重新出題。
 - **練習進度**：每個單元、每個題型的答對／作答數、近 5 題正確率與狀態（未練習／練習中／已熟練）。
 
 - **老師總覽**（`teacher.html`）：輸入老師密碼，看全班各單元的熟練題型數、作答數、正確率、連續練習天數，點名字看各題型細節。
@@ -72,10 +74,12 @@ GitHub Pages 只能放靜態檔案，網頁直接用 Supabase 的 anon 金鑰呼
 
 ## 題目池（`docs/pool.json`）
 
-由 `scripts/build_pool.py` 從 OLE-QS 產生（同時寫出公式樣式 `docs/math.css`）：
+由 `scripts/build_pool.py` 從 OLE-QS 產生。公式在建置時用 **KaTeX** 預先排版成 HTML
+（`scripts/katex_render.mjs`，分數一律用完整大小），網頁只載入 `docs/katex/` 的樣式與字型，不需要外部 CDN：
 
 ```bash
 pip install -r requirements.txt
+npm install                                                           # KaTeX
 python scripts/build_pool.py --oleqs ../OLE-QS                         # 預設範圍 八上 2-2～4-1
 python scripts/build_pool.py --oleqs ../OLE-QS --units 8-1_2-2,8-1_2-3,8-1_3-1,8-1_3-2,8-1_4-1,8-1_4-2
 ```
@@ -105,7 +109,8 @@ docs/teacher.html                    老師總覽
 docs/practice.js                     出題、題型進度（純函式）
 docs/store.js, config.js             練習紀錄存取（Supabase／本機）、連線設定
 supabase/schema.sql                  資料庫結構與函式
-docs/pool.json, math.css             題目池、公式樣式（build_pool.py 產生）
+docs/pool.json, katex/               題目池（公式已排版）、KaTeX 樣式與字型（build_pool.py 產生）
 scripts/build_pool.py                從 OLE-QS 產生題目池
-tests/practice.test.mjs              測試：node --test tests/practice.test.mjs
+scripts/katex_render.mjs             公式預先排版
+tests/practice.test.mjs              測試：npm test
 ```
