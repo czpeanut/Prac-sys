@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>每日數學練習</title>
+<link rel="stylesheet" href="/math.css">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="top">
+  <h1>每日數學練習</h1>
+  <div id="who" hidden><span id="who-name"></span> <button class="link" id="logout">換人</button></div>
+</header>
+
+<main>
+  <!-- 登入 -->
+  <section id="v-login" class="card narrow" hidden>
+    <h2>輸入你的名字</h2>
+    <p class="muted">用名字記錄練習進度。下次用同一個名字就能接著練。</p>
+    <form id="login-form">
+      <input id="login-name" maxlength="20" placeholder="例如：王小明" autocomplete="name" required>
+      <button class="primary">開始</button>
+    </form>
+    <p id="login-err" class="err"></p>
+  </section>
+
+  <!-- 主畫面 -->
+  <div id="v-main" hidden>
+    <nav class="tabs">
+      <button data-tab="today" class="on">今日練習</button>
+      <button data-tab="progress">練習進度</button>
+      <button data-tab="scope">練習範圍</button>
+    </nav>
+
+    <section id="t-today">
+      <div class="card summary">
+        <div><b id="today-day"></b>　<span id="today-scope" class="muted"></span></div>
+        <div class="bar"><i id="today-bar"></i></div>
+        <div id="today-count" class="muted"></div>
+      </div>
+      <div id="items"></div>
+      <div id="today-done" class="card done" hidden></div>
+    </section>
+
+    <section id="t-progress" hidden>
+      <div class="card summary" id="prog-summary"></div>
+      <div id="prog-units"></div>
+      <div class="card">
+        <h3>最近練習</h3>
+        <div id="prog-days" class="days"></div>
+      </div>
+      <p class="muted small">題型熟練：答對 4 題以上，且最近 5 次作答答對 80% 以上。單元進度＝已熟練的題型數／題型數（「其他題型」不計）。</p>
+    </section>
+
+    <section id="t-scope" hidden>
+      <div class="card">
+        <h3>選擇要練習的單元</h3>
+        <p class="muted">每天的 20 題只從勾選的單元出，會優先出還不熟練的題型。</p>
+        <div id="scope-list"></div>
+        <button class="primary" id="scope-save">儲存範圍</button>
+        <p id="scope-msg" class="muted"></p>
+      </div>
+    </section>
+  </div>
+</main>
+
+<footer class="muted small">題目取自 OLE-QS 題庫的公開試題，每題下方標示出處。標有「AI 作答」的答案未經人工確認，若有疑問請問老師。</footer>
+<script src="/static/app.js"></script>
+</body>
+</html>

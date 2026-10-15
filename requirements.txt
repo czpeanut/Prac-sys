@@ -1,0 +1,4 @@
+fastapi>=0.110
+uvicorn[standard]>=0.29
+# 只有重建題目池（scripts/build_pool.py）才需要
+PyYAML>=6.0

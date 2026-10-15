@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>練習總覽</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="top"><h1>練習總覽（老師）</h1><a href="/" class="small">學生頁面</a></header>
+<main>
+  <form id="f" class="card" style="display:flex;gap:8px">
+    <input id="key" type="password" placeholder="老師密碼（PRACSYS_TEACHER）" required>
+    <button class="primary">查看</button>
+  </form>
+  <p id="err" class="err"></p>
+  <div id="out"></div>
+</main>
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+$("#f").onsubmit = async (e) => {
+  e.preventDefault();
+  $("#err").textContent = "";
+  const r = await fetch("/api/teacher", { headers: { "X-Teacher-Key": $("#key").value } });
+  const d = await r.json();
+  if (!r.ok) { $("#err").textContent = d.detail; return; }
+  const head = d.units.map((u) => `<th title="${esc(u.title)}">${esc(u.code)}</th>`).join("");
+  const rows = d.students.map((s) => `<tr><td>${esc(s.name)}</td>
+      <td>${s.mastered}／${s.type_count}</td>
+      ${s.units.map((u) => `<td>${u.mastered}／${u.type_count}<div class="muted small">${u.attempts} 題</div></td>`).join("")}
+      <td>${s.attempts}</td><td>${s.streak} 天</td><td>${esc(s.last_day ?? "—")}</td></tr>`).join("");
+  $("#out").innerHTML = `<div class="card scroll"><p class="muted small">各單元欄位：已熟練題型／題型數，下方為累計作答題數。</p>
+    <table class="list"><tr><th>學生</th><th>熟練題型</th>${head}<th>作答</th><th>連續</th><th>最近練習</th></tr>${rows ||
+    '<tr><td colspan="99" class="muted">還沒有學生</td></tr>'}</table></div>`;
+};
+</script>
+</body>
+</html>

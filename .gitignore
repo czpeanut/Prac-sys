@@ -1,0 +1,7 @@
+# 練習紀錄資料庫（學生資料，不進版控）
+data/*.db
+data/*.db-*
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
