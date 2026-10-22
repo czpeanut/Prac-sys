@@ -11,13 +11,17 @@
 //   熟練＝答對題數 ≥ MASTER_CORRECT 且近期正確率 ≥ MASTER_RATE
 // 單元進度＝已熟練的題型數／該單元的題型數（不含「其他題型」）。
 //
-// 每日進度與欠題（debt）：從 GOAL_START 起每天要完成 DAILY_GOAL 題。
-//   欠題＝過去每天應完成的總數 −（累計作答 − 今天算進今天的前 DAILY_GOAL 題）
-//   也就是今天先做滿今天的份，多做的才拿去還之前欠的；欠越多，量表等級越嚴重（DEBT_LEVELS）。
+// 每日進度與欠題（debt）：從 GOAL_START 起，以一週為週期，每天要完成 DAILY_GOAL 題，
+// 但 REST_WEEKDAYS（週四）不計題目。
+//   欠題＝過去應完成的總數 −（累計作答 − 今天算進今天份的題數）
+//   也就是今天先做滿今天的份，多做的才拿去還之前欠的（休息日做的全部拿去還）；
+//   欠越多，量表等級越嚴重（DEBT_LEVELS）。
 
 export const DAILY_N = 10;
 export const DAILY_GOAL = 10;
-export const GOAL_START = "2026-10-16";
+export const GOAL_START = "2026-10-23";  // 週五；每個週期是週五到下週四
+export const REST_WEEKDAYS = [4];        // 0＝週日 … 4＝週四：不計題目
+const WEEKDAY = ["日", "一", "二", "三", "四", "五", "六"];
 export const MAX_PER_DAY = 100;          // 一天最多出幾題（資料庫一列的上限）
 export const REVIEW_MAX = 3;
 export const RECENT = 5;
@@ -181,27 +185,57 @@ export function answeredOn(student, day) {
   return (student.sets?.[day]?.items ?? []).filter((i) => i.ok !== null && i.ok !== undefined).length;
 }
 
+export const weekdayName = (day) => WEEKDAY[new Date(`${day}T00:00:00Z`).getUTCDay()];
+export const isRestDay = (day) => REST_WEEKDAYS.includes(new Date(`${day}T00:00:00Z`).getUTCDay());
+// 這一天應完成幾題（起算日前、休息日都是 0）
+export const goalOn = (day) => (day < GOAL_START || isRestDay(day) ? 0 : DAILY_GOAL);
+const daysBetween = (a, b) => Math.round((new Date(`${b}T00:00:00Z`) - new Date(`${a}T00:00:00Z`)) / 864e5);
+
+// 這一天所在的週期（從 GOAL_START 起每 7 天一個週期）
+export function weekOf(day) {
+  const k = Math.max(0, Math.floor(daysBetween(GOAL_START, day) / 7));
+  const start = addDays(GOAL_START, 7 * k);
+  return { index: k + 1, start, end: addDays(start, 6) };
+}
+
 export function debt(student, day) {
-  const todayDone = day >= GOAL_START ? answeredOn(student, day) : 0;
+  const started = day >= GOAL_START;
+  const todayGoal = goalOn(day);
+  const todayDone = started ? answeredOn(student, day) : 0;
   let required = 0, done = 0;
   for (let d = GOAL_START; d < day; d = addDays(d, 1)) {
-    required += DAILY_GOAL;
+    required += goalOn(d);
     done += answeredOn(student, d);
   }
-  const extra = Math.max(0, todayDone - DAILY_GOAL);      // 今天多做的拿去還之前欠的
+  const extra = Math.max(0, todayDone - todayGoal);      // 今天的份做滿後，多做的拿去還之前欠的
   const owed = Math.max(0, required - done - extra);
   const level = [...DEBT_LEVELS].reverse().find((l) => owed >= l.min);
+  // 本週：應完成（整週）與已完成
+  const w = weekOf(day);
+  let weekGoal = 0, weekDone = 0;
+  for (let d = w.start; d <= w.end; d = addDays(d, 1)) {
+    weekGoal += goalOn(d);
+    if (d <= day) weekDone += answeredOn(student, d);
+  }
   return {
-    started: day >= GOAL_START, owed, level,
-    todayDone, todayLeft: day >= GOAL_START ? Math.max(0, DAILY_GOAL - todayDone) : 0,
+    started, owed, level, rest: started && todayGoal === 0, todayGoal,
+    todayDone, todayLeft: Math.max(0, todayGoal - todayDone),
+    week: { ...w, goal: weekGoal, done: weekDone },
   };
 }
 
-// 連續達標天數（每天作答 ≥ DAILY_GOAL），算到今天或昨天為止
+// 連續達標天數（要計題目的日子每天作答 ≥ DAILY_GOAL；休息日跳過，不中斷也不算一天），
+// 算到今天或昨天為止
 export function streak(student, day) {
-  const done = new Set(Object.keys(student.sets || {}).filter((d) => answeredOn(student, d) >= DAILY_GOAL));
-  let d = done.has(day) ? day : addDays(day, -1), n = 0;
-  while (done.has(d)) { n++; d = addDays(d, -1); }
+  const ok = (d) => answeredOn(student, d) >= DAILY_GOAL;
+  const counts = (d) => d >= GOAL_START && !isRestDay(d);
+  let d = day, n = 0;
+  if (!counts(d) || !ok(d)) d = addDays(d, -1);           // 今天還沒達標不算中斷
+  for (; d >= GOAL_START; d = addDays(d, -1)) {
+    if (!counts(d)) continue;
+    if (!ok(d)) break;
+    n++;
+  }
   return n;
 }
 

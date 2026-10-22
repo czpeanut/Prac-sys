@@ -79,22 +79,37 @@ function student(perDay) {
   return { scope: [U], sets };
 }
 
-test("欠題：每天 10 題從 GOAL_START 起算，今天多做的才還債", () => {
-  const S = P.GOAL_START, d = (n) => P.addDays(S, n);
-  assert.deepEqual([P.debt(student({}), d(-1)).owed, P.debt(student({}), d(-1)).started], [0, false]);   // 還沒開始
-  let r = P.debt(student({}), S);                      // 第一天：今天還沒做，但還不算欠
+test("欠題：10/23（週五）起每天 10 題，週四不計，今天多做的才還債", () => {
+  const S = P.GOAL_START, d = (n) => P.addDays(S, n);   // d(0)＝10/23 週五 … d(6)＝10/29 週四
+  assert.equal(S, "2026-10-23");
+  assert.deepEqual([P.weekdayName(d(0)), P.isRestDay(d(6)), P.goalOn(d(6))], ["五", true, 0]);
+  let r = P.debt(student({ "2026-10-20": 3 }), "2026-10-22");   // 起算前的紀錄不算
+  assert.deepEqual([r.started, r.owed, r.todayLeft, r.rest], [false, 0, 0, false]);
+  r = P.debt(student({}), S);                          // 第一天：今天還沒做，但還不算欠
   assert.deepEqual([r.owed, r.todayLeft, r.level.key], [0, 10, "ok"]);
   r = P.debt(student({ [S]: 4 }), d(1));               // 昨天只做 4 題
   assert.deepEqual([r.owed, r.level.key], [6, "l1"]);
-  r = P.debt(student({ [S]: 4 }), d(3));               // 之後三天都沒做：6 + 10 + 10 = 26
+  r = P.debt(student({ [S]: 4 }), d(3));               // 之後兩天都沒做：6 + 10 + 10 = 26
   assert.deepEqual([r.owed, r.level.key], [26, "l2"]);
   r = P.debt(student({ [S]: 4, [d(3)]: 10 }), d(3));   // 今天做滿 10 題：今天的份，欠題不變
   assert.deepEqual([r.owed, r.todayLeft], [26, 0]);
   r = P.debt(student({ [S]: 4, [d(3)]: 30 }), d(3));   // 今天做 30 題：多的 20 題還債
   assert.equal(r.owed, 6);
-  r = P.debt(student({}), d(7));                       // 7 天都沒做
-  assert.deepEqual([r.owed, r.level.key], [70, "l4"]);
+  r = P.debt(student({}), d(6));                       // 週四：不用做，欠的是週五～週三 6 天
+  assert.deepEqual([r.rest, r.todayLeft, r.owed, r.level.key], [true, 0, 60, "l4"]);
+  r = P.debt(student({ [d(6)]: 15 }), d(6));           // 週四做的全部拿去還
+  assert.equal(r.owed, 45);
+  r = P.debt(student({}), d(7));                       // 下週五：週四沒有增加欠題
+  assert.equal(r.owed, 60);
   assert.equal(P.debt(student({}), d(4)).level.key, "l3");
+});
+
+test("週期：週五到下週四，一週要做 60 題", () => {
+  const S = P.GOAL_START, d = (n) => P.addDays(S, n);
+  const r = P.debt(student({ [S]: 10, [d(1)]: 12, [d(7)]: 5 }), d(2));
+  assert.deepEqual([r.week.index, r.week.start, r.week.end, r.week.goal, r.week.done], [1, S, d(6), 60, 22]);
+  const r2 = P.debt(student({ [S]: 10, [d(7)]: 5 }), d(7));
+  assert.deepEqual([r2.week.index, r2.week.start, r2.week.done], [2, d(7), 5]);
 });
 
 test("再練 10 題：加在後面、不重複，連續達標天數要每天滿 10 題", () => {
@@ -105,4 +120,8 @@ test("再練 10 題：加在後面、不重複，連續達標天數要每天滿 
   assert.equal(new Set(me.sets[S].items.map((i) => i.q)).size, 20);
   assert.equal(P.streak(student({ [S]: 10, [P.addDays(S, 1)]: 12 }), P.addDays(S, 1)), 2);
   assert.equal(P.streak(student({ [S]: 9, [P.addDays(S, 1)]: 12 }), P.addDays(S, 1)), 1);
+  // 週三、週五都達標，中間的週四休息不中斷
+  const d = (n) => P.addDays(S, n);
+  assert.equal(P.streak(student({ [d(5)]: 10, [d(7)]: 10 }), d(7)), 2);
+  assert.equal(P.streak(student({ [d(5)]: 10 }), d(6)), 1);       // 週四當天：算到週三
 });
