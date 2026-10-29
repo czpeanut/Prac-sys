@@ -29,6 +29,10 @@ create table if not exists pracsys_set (
     primary key (student_id, day)
 );
 
+-- 爬山高度（0～1，熟練度換算，由學生的網頁算好後回存；排行榜與爬山畫面用）
+alter table pracsys_student add column if not exists climb_height real not null default 0;
+alter table pracsys_student add column if not exists climb_at timestamptz;
+
 create table if not exists pracsys_config (
     key    text primary key,
     value  text not null
@@ -103,6 +107,34 @@ begin
   on conflict (student_id, day) do update set scope = excluded.scope, items = excluded.items, updated_at = now();
 end $$;
 
+-- 回存爬山高度
+create or replace function pracsys_save_height(p_student uuid, p_height real)
+returns void language plpgsql security definer set search_path = public, extensions as $$
+begin
+  if p_height is null or p_height < 0 or p_height > 1 then
+    raise exception 'height 格式不對';
+  end if;
+  update pracsys_student set climb_height = p_height, climb_at = now() where id = p_student;
+end $$;
+
+-- 排行榜（公開）：每人只回傳名字、期間內作答題數、達標天數、爬山高度，不含作答細節
+create or replace function pracsys_board(p_from date, p_to date, p_goal int default 10, p_rest int[] default '{4}')
+returns json language sql stable security definer set search_path = public, extensions as $$
+  with per_day as (
+    select d.student_id, d.day,
+           (select count(*) from jsonb_array_elements(d.items) e
+             where jsonb_typeof(e->'ok') = 'boolean') as n
+    from pracsys_set d where d.day between p_from and p_to
+  )
+  select coalesce(json_agg(json_build_object(
+    'name', s.name, 'height', s.climb_height,
+    'done', coalesce((select sum(n) from per_day x where x.student_id = s.id), 0),
+    'goalDays', coalesce((select count(*) from per_day x where x.student_id = s.id and x.n >= p_goal
+                          and extract(dow from x.day)::int <> all(p_rest)), 0)
+  ) order by s.name), '[]'::json)
+  from pracsys_student s
+$$;
+
 -- 老師總覽：全部學生與全部練習（要老師密碼）
 create or replace function pracsys_overview(p_key text)
 returns json language plpgsql stable security definer set search_path = public, extensions as $$
@@ -129,8 +161,9 @@ $$;
 
 -- Supabase 預設會把 public schema 新建的函式直接授權給 anon、authenticated，
 -- 所以除了 public 也要明確收回，否則網頁也能呼叫 pracsys_set_teacher_key 改掉老師密碼
-revoke all on function pracsys_norm(text), pracsys_names(), pracsys_login(text, jsonb), pracsys_get(uuid), pracsys_save_scope(uuid, jsonb),
+revoke all on function pracsys_save_height(uuid, real), pracsys_board(date, date, int, int[]),
+  pracsys_norm(text), pracsys_names(), pracsys_login(text, jsonb), pracsys_get(uuid), pracsys_save_scope(uuid, jsonb),
   pracsys_save_set(uuid, date, jsonb, jsonb), pracsys_overview(text), pracsys_set_teacher_key(text)
   from public, anon, authenticated;
-grant execute on function pracsys_names(), pracsys_login(text, jsonb), pracsys_get(uuid), pracsys_save_scope(uuid, jsonb),
+grant execute on function pracsys_save_height(uuid, real), pracsys_board(date, date, int, int[]), pracsys_names(), pracsys_login(text, jsonb), pracsys_get(uuid), pracsys_save_scope(uuid, jsonb),
   pracsys_save_set(uuid, date, jsonb, jsonb), pracsys_overview(text) to anon, authenticated;

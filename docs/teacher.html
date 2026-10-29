@@ -23,6 +23,7 @@
 import * as P from "./practice.js";
 import { online, overview } from "./store.js";
 import { masteryLegend, typeTable } from "./ui.js";
+import { boardTable, mountainView } from "./board.js";
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -69,13 +70,34 @@ $("#f").onsubmit = async (e) => {
   }).join("");
   $("#out").innerHTML = `<div class="card"><h3>每日進度（每天 ${P.DAILY_GOAL} 題，週四休息；${md(P.GOAL_START)} 起算，每週五到下週四一個週期）</h3>
     <p>${day < P.GOAL_START ? `還沒開始，${md(P.GOAL_START)} 起算。` : rest ? "今天週四休息，不計題目。"
-      : `今天還沒練完：<b class="due">${notDone}</b> 人`}　本週：第 ${w.index} 週（${md(w.start)}～${md(w.end)}），每人 ${w.goal} 題</p><div class="legend">${legend}</div></div>
+      : `今天還沒練完：<b class="due">${notDone}</b> 人`}　本週：第 ${w.index} 週（${md(w.start)}～${md(w.end)}），每人 ${w.goal} 題</p><div class="legend">${legend}</div>
+      <div class="actions"><button class="primary" id="projector">⛰ 爬山畫面＋排行榜（投影）</button></div></div>
     <div class="card scroll"><p class="muted small">欠題＝過去每天應完成的題數減掉實際作答（今天做滿 ${P.DAILY_GOAL} 題後多做的會拿來還）。各單元：熟練以上題型／題型數，下方為累計作答題數。點名字看各題型細節。</p>
     <table class="list"><tr><th>學生</th><th>今天</th><th>本週</th><th>欠題</th><th>熟練題型</th>${head}<th>作答／正確率</th><th>連續達標</th><th>最近練習</th></tr>${rows ||
     '<tr><td colspan="99" class="muted">還沒有學生</td></tr>'}</table></div>`;
   $("#detail").innerHTML = "";
   document.querySelectorAll("[data-i]").forEach((b) => (b.onclick = () => detail(students[b.dataset.i])));
+  $("#projector").onclick = () => projector(day);
 };
+
+// 投影模式：全螢幕爬山畫面＋本週排行（高度、排行都用完整紀錄現算）
+async function projector(day) {
+  const rows = students.map((s) => {
+    const { done, goalDays } = P.weekStats(s, day);
+    return { name: s.name, height: P.climbHeight(pool, s, day), done, goalDays };
+  });
+  const box = document.createElement("div");
+  box.className = "mtn-full";
+  box.innerHTML = `<button class="close">✕ 關閉</button><div class="mtn"></div><aside>${boardTable(rows, { top: 15, day })}
+    <p class="muted small">高度＝熟練度；本週有練習的人在爬，還沒練的人坐著休息。</p></aside>`;
+  document.body.append(box);
+  box.requestFullscreen?.().catch(() => {});
+  const scene = await mountainView(box.querySelector(".mtn"), rows, { units: pool.units, day });
+  const close = () => { scene.dispose(); box.remove(); document.fullscreenElement && document.exitFullscreen(); removeEventListener("keydown", onKey); };
+  const onKey = (e) => e.key === "Escape" && close();
+  addEventListener("keydown", onKey);
+  box.querySelector(".close").onclick = close;
+}
 
 function detail(s) {
   const p = P.progress(pool, s, P.today());

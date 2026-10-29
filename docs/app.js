@@ -3,6 +3,7 @@
 import * as P from "./practice.js";
 import { online, store } from "./store.js";
 import { masteryLegend, typeTable } from "./ui.js";
+import { boardTable, mountainView } from "./board.js";
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -10,10 +11,15 @@ let pool, me, todaySet;
 
 // ─────────── 紀錄 ───────────
 // 每次作答都把當天整份寫回；寫不進去就顯示提示，下一次寫入會一併補上（整份覆寫）。
+// 回存爬山高度（排行榜用）；失敗不影響作答，下次再存
+function saveHeight() {
+  store.saveHeight(me, P.climbHeight(pool, me, P.today())).catch(() => {});
+}
+
 async function sync(what) {
   try {
     if (what === "scope") await store.saveScope(me);
-    else await store.saveSet(me, what);
+    else { await store.saveSet(me, what); saveHeight(); }
     $("#sync").hidden = true;
     return true;
   } catch (err) {
@@ -67,20 +73,39 @@ async function enter(name, btn) {
   finally { if (btn) btn.disabled = false; }
 }
 
+// ─────────── 排行榜 ───────────
+let scene = null;
+async function loadBoard() {
+  $("#board").innerHTML = '<p class="muted">載入排行中…</p>';
+  const day = P.today();
+  let rows;
+  try { rows = await store.board(pool, day); }
+  catch (err) { $("#board").innerHTML = `<p class="err">讀不到排行：${err.message}</p>`; return; }
+  // 自己的高度用剛算好的（資料庫裡的可能還沒更新）
+  const myH = P.climbHeight(pool, me, day);
+  rows = rows.map((r) => (r.name === me.name ? { ...r, height: myH } : r));
+  $("#board").innerHTML = boardTable(rows, { me: me.name, day });
+  $("#my-height").textContent = `你爬到 ${Math.round(myH * 100)}%`;
+  if (scene) scene.dispose();
+  scene = await mountainView($("#mtn"), rows, { me: me.name, units: pool.units, day });
+}
+
 function start(student) {
   me = student;
   me.sets ||= {};
   $("#who-name").textContent = me.name;
   $("#backup-card").hidden = online;
   show("main"); tab("today");
+  saveHeight();
 }
 
 // ─────────── 分頁 ───────────
 document.querySelectorAll(".tabs button").forEach((b) => (b.onclick = () => tab(b.dataset.tab)));
 function tab(name) {
   document.querySelectorAll(".tabs button").forEach((b) => b.classList.toggle("on", b.dataset.tab === name));
-  for (const t of ["today", "progress"]) $(`#t-${t}`).hidden = t !== name;
-  ({ today: loadToday, progress: loadProgress })[name]();
+  for (const t of ["today", "progress", "board"]) $(`#t-${t}`).hidden = t !== name;
+  if (name !== "board" && scene) { scene.dispose(); scene = null; }   // 離開排行榜就停掉 3D，省電
+  ({ today: loadToday, progress: loadProgress, board: loadBoard })[name]();
 }
 window.tab = tab;
 

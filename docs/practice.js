@@ -327,3 +327,41 @@ export function progress(pool, student, day) {
     .map(([d, s]) => ({ day: d, n: s.items.length, done: s.items.filter((i) => i.ok !== null).length, ok: s.items.filter((i) => i.ok).length }));
   return { units, mastered, typeCount, streak: streak(student, day), days };
 }
+
+// ─────────── 排行榜與爬山高度 ───────────
+
+// 爬山高度（0～1）：各題型熟練度等級的平均，山頂＝所有題型都精熟（「其他題型」不計）
+export const LEVEL_HEIGHT = [0, 0.1, 0.3, 0.6, 0.85, 1];
+export function climbHeight(pool, student, day) {
+  const stats = typeStats(records(student), day);
+  let sum = 0, n = 0;
+  for (const u of pool.units) for (const t of u.types) {
+    if (t.code === OTHER) continue;
+    n++;
+    sum += LEVEL_HEIGHT[stats.get(`${u.key}|${t.code}`)?.levelIndex ?? 0];
+  }
+  return n ? Math.round((sum / n) * 1000) / 1000 : 0;
+}
+
+// 本週（週五到下週四）排行用：作答題數、達標天數（休息日不算）
+export function weekStats(student, day) {
+  const w = weekOf(day);
+  let done = 0, goalDays = 0;
+  for (let d = w.start; d <= day && d <= w.end; d = addDays(d, 1)) {
+    const n = answeredOn(student, d);
+    done += n;
+    if (goalOn(d) && n >= goalOn(d)) goalDays++;
+  }
+  return { week: w, done, goalDays };
+}
+
+// 排序：本週作答多的在前，同分看達標天數；同分同名次
+export function rank(rows) {
+  const sorted = [...rows].sort((a, b) => b.done - a.done || b.goalDays - a.goalDays || a.name.localeCompare(b.name, "zh-Hant"));
+  let prev = null;
+  sorted.forEach((r, i) => {
+    r.rank = prev && prev.done === r.done && prev.goalDays === r.goalDays ? prev.rank : i + 1;
+    prev = r;
+  });
+  return sorted;
+}

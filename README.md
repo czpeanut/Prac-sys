@@ -49,6 +49,17 @@ Source 選 **Deploy from a branch**，Branch 選預設分支、資料夾選 **/d
 
 - **老師總覽**（`teacher.html`）：輸入老師密碼，看全班今天是否練完、欠題等級（欠最多的排前面）、各單元的熟練題型數、作答數、正確率、連續達標天數，點名字看各題型細節。
 
+## 排行榜與爬山畫面
+
+- **排行榜**（學生頁「排行榜」分頁）：本週（週五～下週四）作答題數排行，同分看達標天數；只列前 10 名，
+  加上自己的名次，每週五重新開始。排名獎勵的是努力（作答量），不是正確率；欠題、卡關不公開。
+- **爬山畫面**：N64 風格的 3D 山（Three.js，放在 `docs/vendor/`），高度＝熟練度（各題型等級的平均，
+  所有題型精熟才到山頂），五段山坡依序是 2-2～4-1。本週有練習的人在爬，還沒練的坐著休息；自己有黃色光圈，
+  鏡頭先對準自己。可拖曳旋轉、滾輪縮放；手機不支援 WebGL 時改成長條圖。
+- **老師投影**：老師總覽的「爬山畫面＋排行榜（投影）」按鈕，全螢幕顯示全班與排行，按 Esc 關閉。
+- 排行用的資料庫函式 `pracsys_board` 是公開的，只回傳名字、本週作答數、達標天數與爬山高度；
+  爬山高度由學生的網頁算好後回存（`pracsys_save_height`）。
+
 ## 熟練度量尺（`docs/practice.js` 的 `MASTERY`、`BKT`）
 
 每個學生 × 每個題型，依作答紀錄判定六個等級。設計依據：
@@ -144,7 +155,9 @@ python scripts/build_pool.py --oleqs ../OLE-QS --units 8-1_2-2,8-1_2-3,8-1_3-1,8
 
 ```
 docs/index.html, app.js, style.css   網頁（GitHub Pages 從這裡發布）
-docs/teacher.html                    老師總覽
+docs/teacher.html                    老師總覽（含投影模式）
+docs/board.js, mountain.js           排行榜、N64 風格 3D 爬山畫面
+docs/vendor/three.module.min.js      Three.js 0.160
 docs/practice.js                     出題、題型進度（純函式）
 docs/store.js, config.js             練習紀錄存取（Supabase／本機）、連線設定
 supabase/schema.sql                  資料庫結構與函式

@@ -152,3 +152,17 @@ test("再練 10 題：加在後面、不重複，連續達標天數要每天滿 
   assert.equal(P.streak(student({ [d(5)]: 10, [d(7)]: 10 }), d(7)), 2);
   assert.equal(P.streak(student({ [d(5)]: 10 }), d(6)), 1);       // 週四當天：算到週三
 });
+
+test("爬山高度與本週排行", () => {
+  assert.equal(P.climbHeight(pool, { sets: {} }, "2026-10-23"), 0);
+  const ids = pool.questions.filter((q) => q.unit === U && q.type_code === "T01").map((q) => q.id).slice(0, 5);
+  const items = ids.map((q, i) => ({ q, unit: U, type: "T01", r: "A", ok: true, at: `2026-10-23T0${i}` }));
+  const me = { sets: { "2026-10-23": { scope: [U], items } } };
+  const types = pool.units.reduce((a, u) => a + u.types.filter((t) => t.code !== P.OTHER).length, 0);
+  assert.equal(P.climbHeight(pool, me, "2026-10-23"), Math.round((0.85 / types) * 1000) / 1000);   // 一個題型熟練
+  const S = P.GOAL_START, d = (n) => P.addDays(S, n);
+  const w = P.weekStats(student({ [S]: 10, [d(1)]: 4, [d(6)]: 12, [d(7)]: 3 }), d(6));
+  assert.deepEqual([w.done, w.goalDays], [26, 1]);                     // 週四的 12 題算作答，不算達標天
+  const r = P.rank([{ name: "甲", done: 10, goalDays: 1 }, { name: "乙", done: 30, goalDays: 2 }, { name: "丙", done: 10, goalDays: 1 }]);
+  assert.deepEqual(r.map((x) => `${x.name}${x.rank}`).sort(), ["丙2", "乙1", "甲2"].sort());   // 同分同名次
+});

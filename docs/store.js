@@ -1,6 +1,7 @@
 // 練習紀錄的存取：有設定 Supabase（config.js）就存到線上資料庫，沒有就存在這台裝置的瀏覽器。
 // 兩種模式對外的介面相同：login(name) → 學生物件 {id, name, scope, sets}，saveSet / saveScope 寫回。
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./config.js";
+import * as P from "./practice.js";
 
 export const online = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
 const LOCAL = "pracsys.v1";          // 本機模式：所有學生的紀錄
@@ -52,6 +53,13 @@ const local = {
   },
   async saveSet(student) { this.persist(student); },
   async saveScope(student) { this.persist(student); },
+  async saveHeight() {},                   // 本機模式的排行直接從紀錄算
+  async board(pool, day) {
+    return Object.values(this.db().students).map((s) => {
+      const { done, goalDays } = P.weekStats(s, day);
+      return { name: s.name, height: P.climbHeight(pool, s, day), done, goalDays };
+    });
+  },
   restore(data) {           // 還原備份檔：{學生鍵: 學生資料}
     const db = this.db();
     Object.assign(db.students, data);
@@ -87,6 +95,14 @@ const remote = {
   },
   async saveScope(student) {
     await rpc("pracsys_save_scope", { p_student: student.id, p_scope: student.scope });
+  },
+  async saveHeight(student, height) {
+    await rpc("pracsys_save_height", { p_student: student.id, p_height: height });
+  },
+  async board(pool, day) {
+    const w = P.weekOf(day);
+    const to = day < w.end ? day : w.end;
+    return rpc("pracsys_board", { p_from: w.start, p_to: to, p_goal: P.DAILY_GOAL, p_rest: P.REST_WEEKDAYS });
   },
 };
 

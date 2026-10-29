@@ -123,3 +123,23 @@ table.list td, table.list th { padding: 6px; border-top: 1px solid var(--line); 
 .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 14px; }
 .gauge .seg.on { opacity: 1; }
 table.list td, table.list th, .badge { white-space: nowrap; }
+
+/* 排行榜與爬山畫面 */
+table.board td.rk { width: 2.5em; text-align: center; font-weight: 700; }
+table.board tr.me td { background: var(--accent-bg); font-weight: 700; }
+.mtn { position: relative; height: 380px; border-radius: 10px; overflow: hidden; background: #7fb2ff; touch-action: none; }
+.mtn-canvas { width: 100%; height: 100%; display: block; image-rendering: auto; cursor: grab; }
+.mtn-labels { position: absolute; inset: 0; pointer-events: none; }
+.mtn-name, .mtn-camp { position: absolute; left: 0; top: 0; white-space: nowrap; font-size: 11px; font-weight: 700;
+  padding: 0 5px; border-radius: 4px; background: rgba(0, 0, 0, .55); color: #fff; }
+.mtn-name.me { background: #ffd400; color: #222; font-size: 13px; z-index: 2; }
+.mtn-camp { background: rgba(226, 59, 59, .85); font-size: 10px; }
+.mtn.flat { height: auto; background: none; overflow: visible; }
+.flat-row { display: flex; gap: 8px; align-items: center; padding: 3px 0; }
+.flat-row span:first-child { width: 6em; }
+.flat-row.me { font-weight: 700; color: var(--accent); }
+.mtn-full { position: fixed; inset: 0; z-index: 50; background: #000; display: flex; }
+.mtn-full .mtn { flex: 1; height: 100%; border-radius: 0; }
+.mtn-full aside { width: 320px; background: var(--card); padding: 16px; overflow: auto; }
+.mtn-full .close { position: absolute; top: 12px; left: 12px; z-index: 3; }
+@media (max-width: 700px) { .mtn-full aside { display: none; } }
