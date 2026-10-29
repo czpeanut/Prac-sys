@@ -22,6 +22,7 @@
 <script type="module">
 import * as P from "./practice.js";
 import { online, overview } from "./store.js";
+import { masteryLegend, typeTable } from "./ui.js";
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -69,7 +70,7 @@ $("#f").onsubmit = async (e) => {
   $("#out").innerHTML = `<div class="card"><h3>每日進度（每天 ${P.DAILY_GOAL} 題，週四休息；${md(P.GOAL_START)} 起算，每週五到下週四一個週期）</h3>
     <p>${day < P.GOAL_START ? `還沒開始，${md(P.GOAL_START)} 起算。` : rest ? "今天週四休息，不計題目。"
       : `今天還沒練完：<b class="due">${notDone}</b> 人`}　本週：第 ${w.index} 週（${md(w.start)}～${md(w.end)}），每人 ${w.goal} 題</p><div class="legend">${legend}</div></div>
-    <div class="card scroll"><p class="muted small">欠題＝過去每天應完成的題數減掉實際作答（今天做滿 ${P.DAILY_GOAL} 題後多做的會拿來還）。各單元：已熟練題型／題型數，下方為累計作答題數。點名字看各題型細節。</p>
+    <div class="card scroll"><p class="muted small">欠題＝過去每天應完成的題數減掉實際作答（今天做滿 ${P.DAILY_GOAL} 題後多做的會拿來還）。各單元：熟練以上題型／題型數，下方為累計作答題數。點名字看各題型細節。</p>
     <table class="list"><tr><th>學生</th><th>今天</th><th>本週</th><th>欠題</th><th>熟練題型</th>${head}<th>作答／正確率</th><th>連續達標</th><th>最近練習</th></tr>${rows ||
     '<tr><td colspan="99" class="muted">還沒有學生</td></tr>'}</table></div>`;
   $("#detail").innerHTML = "";
@@ -78,13 +79,12 @@ $("#f").onsubmit = async (e) => {
 
 function detail(s) {
   const p = P.progress(pool, s, P.today());
-  $("#detail").innerHTML = `<h2>${esc(s.name)}</h2>` + p.units.map((u) => `<div class="card unit">
-    <h3><span>${esc(u.book)} ${esc(u.code)} ${esc(u.title)}</span><span class="muted small">熟練 ${u.mastered}／${u.typeCount}</span></h3>
-    <div class="scroll"><table class="types"><tr><th>題型</th><th>答對／作答</th><th>近 5 題</th><th></th></tr>
-    ${u.types.map((t) => `<tr><td>${esc(t.name)}</td><td class="n">${t.correct}／${t.attempts}</td>
-      <td class="n">${t.rate === null ? "—" : Math.round(t.rate * 100) + "%"}</td>
-      <td><span class="tag ${{ 未練習: "s0", 練習中: "s1", 已熟練: "s2" }[t.status]}">${t.status}</span></td></tr>`).join("")}
-    </table></div></div>`).join("");
+  const flagged = p.units.flatMap((u) => u.types.filter((t) => t.stuck).map((t) => `${u.code} ${t.name}`));
+  $("#detail").innerHTML = `<h2>${esc(s.name)}</h2>` +
+    (flagged.length ? `<p class="card"><span class="tag flag-stuck">卡關</span> 建議個別講解：${flagged.map(esc).join("、")}</p>` : "") +
+    p.units.map((u) => `<div class="card unit">
+    <h3><span>${esc(u.book)} ${esc(u.code)} ${esc(u.title)}</span><span class="muted small">熟練以上 ${u.mastered}／${u.typeCount}</span></h3>
+    ${typeTable(u, { desc: false })}</div>`).join("") + `<div class="card">${masteryLegend()}</div>`;
   $("#detail").scrollIntoView({ behavior: "smooth" });
 }
 </script>

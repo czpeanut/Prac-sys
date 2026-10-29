@@ -37,21 +37,48 @@ test("沒熟練的題型抽得比已熟練的多", () => {
   const types = pool.units[0].types.filter((t) => t.code !== P.OTHER).map((t) => t.code);
   const stats = new Map();
   for (const c of types.slice(0, -1)) {
-    const st = new P.TypeStat(); st.attempts = 5; st.correctIds = new Set([1, 2, 3, 4, 5]); st.recent = [1, 1, 1, 1, 1];
+    const st = new P.TypeStat();
+    for (let i = 0; i < 5; i++) st.add({ q: `x${i}`, ok: true, day: "2026-10-15" });
     stats.set(`${U}|${c}`, st);
   }
   const picked = P.choose(pool, [U], new Map(), stats, "2026-10-15", 10, P.seeded(3));
   assert.ok(picked.filter((q) => pool.byId[q].type_code === types.at(-1)).length >= 2);
 });
 
-test("熟練規則與進度、連續天數", () => {
+test("熟練度量尺：考量總作答數、不同題目、近期穩定度與間隔", () => {
+  const run = (pattern, { days, same } = {}) => {
+    const st = new P.TypeStat();
+    [...pattern].forEach((c, i) => st.add({ q: same ? "q" : `q${i}`, ok: c === "1", day: days?.[i] ?? "2026-10-23" }));
+    st.today = "2026-10-23";
+    return st;
+  };
+  assert.equal(new P.TypeStat().status, "未練習");
+  assert.equal(run("11").status, "起步");                 // 兩題全對：證據不足
+  assert.equal(run("111").status, "接近熟練");            // 三題全對：還不夠確認
+  assert.equal(run("11111").status, "熟練");              // 五題全對
+  assert.equal(run("11110").status, "接近熟練");          // 4/5：Wilson 下界 0.51 不足
+  assert.equal(run("10100101").status, "學習中");          // 一半對一半錯
+  assert.equal(run("0100100010001000").status, "學習中");  // 接近亂猜
+  assert.ok(run("0100100010001000").stuck);                // 練很多還是常錯：卡關
+  assert.equal(run("1011110111").status, "熟練");          // 9/10
+  assert.equal(run("11111", { same: true }).status, "接近熟練");   // 同一題答對五次不算熟練（要不同題目）
+  const twelve = "111111111111";
+  assert.equal(run(twelve).status, "熟練");                // 同一天做 12 題：還不到精熟
+  const days = [...twelve].map((_, i) => ["2026-10-23", "2026-10-27", "2026-10-31"][Math.floor(i / 4)]);
+  assert.equal(run(twelve, { days }).status, "精熟");      // 分散在 3 天、相隔 8 天
+  const old = run("11111"); old.today = "2026-11-10";
+  assert.ok(old.needsReview && !old.mastered);             // 18 天沒練：需複習，出題時當作未熟練
+  assert.deepEqual([P.wilsonLower(5, 5), P.wilsonLower(8, 10), P.wilsonLower(7, 10)].map((x) => +x.toFixed(2)), [0.75, 0.6, 0.5]);
+});
+
+test("進度：單元熟練數＝熟練以上的題型數", () => {
   const ids = pool.questions.filter((q) => q.unit === U && q.type_code === "T01").map((q) => q.id).slice(0, 5);
   const items = ids.map((q, i) => ({ q, unit: U, type: "T01", r: "A", ok: true, at: `2026-10-15T0${i}` }));
   const me = { scope: [U], sets: { "2026-10-15": { scope: [U], items } } };
   const p = P.progress(pool, me, "2026-10-15");
-  assert.equal(p.units[0].types.find((t) => t.code === "T01").status, "已熟練");
+  const t = p.units[0].types.find((x) => x.code === "T01");
+  assert.deepEqual([t.status, t.level, t.attempts, t.correct], ["熟練", 4, 5, 5]);
   assert.equal(p.units[0].mastered, 1);
-  assert.equal(P.today(new Date("2026-10-15T17:00:00Z")), "2026-10-16");   // 台灣時間已過午夜
 });
 
 test("換章節：已作答的保留，其餘換成新範圍，總數不變", () => {

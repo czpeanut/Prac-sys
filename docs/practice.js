@@ -2,14 +2,18 @@
 //
 // 每日出題（一份 DAILY_N 題，做完可以再加；只從學生選的練習範圍裡出）：
 //   1. 先放「之前答錯、還沒再答對」的題目（最多 REVIEW_MAX 題，昨天以前的）
-//   2. 其餘依題型輪流抽：還沒熟練的題型每輪抽 2 題、已熟練的 1 題，
+//   2. 其餘依題型輪流抽：還沒熟練（或需複習）的題型每輪抽 2 題、熟練以上的 1 題，
 //      弱的題型（正確率低、做得少）排前面；優先抽沒做過的題目，題型的新題用完才重出最久以前答對的題目
 //   3. 依單元順序、難度由易到難排好
 //
-// 題型進度（每個學生 × 每個題型）：
-//   答對題數＝答對過的「不同題目」數；近期正確率＝最近 RECENT 次作答的正確率
-//   熟練＝答對題數 ≥ MASTER_CORRECT 且近期正確率 ≥ MASTER_RATE
-// 單元進度＝已熟練的題型數／該單元的題型數（不含「其他題型」）。
+// 題型熟練度量尺（每個學生 × 每個題型，詳見 README「熟練度量尺」）：
+//   掌握度 P(L)：貝氏知識追蹤（BKT，Corbett & Anderson 1995），依作答先後逐題更新，
+//                四選一單選題的猜對機率 P(G)=0.25、會但粗心的失誤 P(S)=0.10
+//   證據門檻：總作答數（樣本太少不下判斷）、答對過的不同題目數（遷移，不是背答案）、
+//             最近 10 次作答正確率的 Wilson 下界（作答越少越保守）
+//   保留：答對分散在不同天（間隔效果）；久未練習標「需複習」（遺忘曲線）
+//   等級：未練習 → 起步 → 學習中 → 接近熟練 → 熟練 → 精熟（MASTERY_LEVELS）
+// 單元進度＝達「熟練」以上的題型數／該單元的題型數（不含「其他題型」）。
 //
 // 每日進度與欠題（debt）：從 GOAL_START 起，以一週為週期，每天要完成 DAILY_GOAL 題，
 // 但 REST_WEEKDAYS（週四）不計題目。
@@ -24,9 +28,26 @@ export const REST_WEEKDAYS = [4];        // 0＝週日 … 4＝週四：不計�
 const WEEKDAY = ["日", "一", "二", "三", "四", "五", "六"];
 export const MAX_PER_DAY = 100;          // 一天最多出幾題（資料庫一列的上限）
 export const REVIEW_MAX = 3;
-export const RECENT = 5;
-export const MASTER_CORRECT = 4;
-export const MASTER_RATE = 0.8;
+// 熟練度量尺參數
+export const BKT = { init: 0.15, learn: 0.10, guess: 0.25, slip: 0.10 };
+export const RECENT = 10;                // 近期表現看最近幾次作答
+export const WILSON_Z = 1.28;            // 單尾 90% 信賴下界
+export const MASTERY = {
+  minAttempts: 3,                        // 少於這個數：證據不足，只標「起步」
+  learning: 0.7,                         // P(L) 未達：學習中
+  mastered: { pL: 0.85, attempts: 5, distinct: 4, lower: 0.6 },
+  expert: { attempts: 12, days: 3, span: 7 },   // 精熟：答對分散在 ≥3 天、首尾相隔 ≥7 天
+  reviewAfter: 14,                       // 熟練以上、超過幾天沒練：需複習
+  stuck: { attempts: 8, rate: 0.5 },     // 作答夠多但近期正確率仍低於此：卡關，需要老師協助
+};
+export const MASTERY_LEVELS = [
+  { key: "m0", label: "未練習", note: "還沒有作答" },
+  { key: "m1", label: "起步", note: `作答不到 ${MASTERY.minAttempts} 題，還看不出程度` },
+  { key: "m2", label: "學習中", note: `掌握度未達 ${MASTERY.learning * 100}%` },
+  { key: "m3", label: "接近熟練", note: "掌握度夠了，但作答量或穩定度還不足以確認" },
+  { key: "m4", label: "熟練", note: `掌握度 ≥ ${MASTERY.mastered.pL * 100}%、作答 ≥ ${MASTERY.mastered.attempts} 題、答對 ≥ ${MASTERY.mastered.distinct} 道不同題目、近期穩定答對` },
+  { key: "m5", label: "精熟", note: `熟練，且作答 ≥ ${MASTERY.expert.attempts} 題、答對分散在 ${MASTERY.expert.days} 天以上（相隔 ≥ ${MASTERY.expert.span} 天）` },
+];
 export const OTHER = "OTHER";
 
 // 台灣日期（固定 +8，沒有日光節約時間）
@@ -66,23 +87,70 @@ export function records(student) {
   return out.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
 }
 
-export class TypeStat {
-  constructor() { this.attempts = 0; this.correctIds = new Set(); this.recent = []; }
-  get rate() { return this.recent.length ? this.recent.reduce((a, b) => a + b, 0) / this.recent.length : null; }
-  get mastered() { return this.correctIds.size >= MASTER_CORRECT && (this.rate ?? 0) >= MASTER_RATE; }
-  get status() { return !this.attempts ? "未練習" : this.mastered ? "已熟練" : "練習中"; }
+// Wilson 分數區間下界：正確率的保守估計，作答越少越低（5 題全對 ≈ 0.75、4/5 ≈ 0.51、8/10 ≈ 0.60）
+export function wilsonLower(k, n, z = WILSON_Z) {
+  if (!n) return 0;
+  const p = k / n, z2 = z * z;
+  return (p + z2 / (2 * n) - z * Math.sqrt((p * (1 - p) + z2 / (4 * n)) / n)) / (1 + z2 / n);
 }
 
-export function typeStats(recs) {
-  const stats = new Map();
-  for (let i = recs.length - 1; i >= 0; i--) {       // 由新到舊
-    const r = recs[i], k = `${r.unit}|${r.type}`;
-    if (!stats.has(k)) stats.set(k, new TypeStat());
-    const st = stats.get(k);
-    st.attempts++;
-    if (r.ok) st.correctIds.add(r.q);
-    if (st.recent.length < RECENT) st.recent.push(r.ok ? 1 : 0);
+// BKT：作答一次後更新「已學會」的機率
+export function bktUpdate(pL, ok, b = BKT) {
+  const post = ok ? (pL * (1 - b.slip)) / (pL * (1 - b.slip) + (1 - pL) * b.guess)
+    : (pL * b.slip) / (pL * b.slip + (1 - pL) * (1 - b.guess));
+  return post + (1 - post) * b.learn;
+}
+
+export class TypeStat {
+  constructor() {
+    this.attempts = 0; this.correctIds = new Set(); this.recent = [];   // recent：由新到舊
+    this.pL = BKT.init; this.okDays = new Set(); this.lastDay = null; this.today = null;
   }
+  add(r) {                                // 依時間先後加入一次作答
+    this.attempts++;
+    this.pL = bktUpdate(this.pL, !!r.ok);
+    if (r.ok) { this.correctIds.add(r.q); this.okDays.add(r.day); }
+    this.recent.unshift(r.ok ? 1 : 0);
+    if (this.recent.length > RECENT) this.recent.pop();
+    this.lastDay = r.day;
+  }
+  get rate() { return this.recent.length ? this.recent.reduce((a, b) => a + b, 0) / this.recent.length : null; }
+  get lower() { return wilsonLower(this.recent.reduce((a, b) => a + b, 0), this.recent.length); }
+  get span() {
+    const d = [...this.okDays].sort();
+    return d.length ? Math.round((new Date(`${d.at(-1)}T00:00:00Z`) - new Date(`${d[0]}T00:00:00Z`)) / 864e5) : 0;
+  }
+  get levelIndex() {
+    const M = MASTERY;
+    if (!this.attempts) return 0;
+    if (this.attempts < M.minAttempts) return 1;
+    if (this.pL < M.learning) return 2;
+    const g = M.mastered;
+    if (!(this.pL >= g.pL && this.attempts >= g.attempts && this.correctIds.size >= g.distinct && this.lower >= g.lower)) return 3;
+    const e = M.expert;
+    return this.attempts >= e.attempts && this.okDays.size >= e.days && this.span >= e.span ? 5 : 4;
+  }
+  get level() { return MASTERY_LEVELS[this.levelIndex]; }
+  get needsReview() {                     // 熟練以上但很久沒練：遺忘曲線，安排複習
+    if (this.levelIndex < 4 || !this.lastDay || !this.today) return false;
+    return (new Date(`${this.today}T00:00:00Z`) - new Date(`${this.lastDay}T00:00:00Z`)) / 864e5 >= MASTERY.reviewAfter;
+  }
+  get stuck() {                           // 練很多還是常錯：需要老師協助（不是再多練就會）
+    return this.attempts >= MASTERY.stuck.attempts && this.levelIndex <= 2 && (this.rate ?? 0) < MASTERY.stuck.rate;
+  }
+  // 出題用：熟練以上且不需複習才當作「已熟練」，少出一點
+  get mastered() { return this.levelIndex >= 4 && !this.needsReview; }
+  get status() { return this.level.label; }
+}
+
+export function typeStats(recs, today = null) {
+  const stats = new Map();
+  for (const r of recs) {                 // 由舊到新
+    const k = `${r.unit}|${r.type}`;
+    if (!stats.has(k)) stats.set(k, new TypeStat());
+    stats.get(k).add(r);
+  }
+  for (const st of stats.values()) st.today = today;
   return stats;
 }
 
@@ -142,7 +210,7 @@ export function choose(pool, scope, hist, stats, day, n = DAILY_N, rng = Math.ra
 
 export function newSet(pool, student, day, rng = Math.random) {
   const recs = records(student);
-  const ids = choose(pool, student.scope, history(recs), typeStats(recs), day, DAILY_N, rng);
+  const ids = choose(pool, student.scope, history(recs), typeStats(recs, day), day, DAILY_N, rng);
   return { scope: [...student.scope], items: ids.map((id) => ({ q: id, unit: pool.byId[id].unit, type: pool.byId[id].type_code, r: null, ok: null, at: null })) };
 }
 
@@ -155,7 +223,7 @@ export function rescope(pool, student, day, rng = Math.random) {
   const kept = set.items.filter((i) => i.r !== null);
   const total = Math.max(set.items.length, DAILY_N);
   const recs = records(student);
-  const ids = choose(pool, student.scope, history(recs), typeStats(recs), day, total - kept.length, rng, kept.map((i) => i.q));
+  const ids = choose(pool, student.scope, history(recs), typeStats(recs, day), day, total - kept.length, rng, kept.map((i) => i.q));
   return { scope: [...student.scope], items: [...kept, ...ids.map((id) => item(pool, id))] };
 }
 
@@ -165,7 +233,7 @@ export function extend(pool, student, day, n = DAILY_N, rng = Math.random) {
   n = Math.min(n, MAX_PER_DAY - set.items.length);
   if (n <= 0) return set;
   const recs = records(student);
-  const ids = choose(pool, student.scope, history(recs), typeStats(recs), day, n, rng, set.items.map((i) => i.q));
+  const ids = choose(pool, student.scope, history(recs), typeStats(recs, day), day, n, rng, set.items.map((i) => i.q));
   return { ...set, items: [...set.items, ...ids.map((id) => item(pool, id))] };
 }
 
@@ -240,15 +308,17 @@ export function streak(student, day) {
 }
 
 export function progress(pool, student, day) {
-  const stats = typeStats(records(student));
+  const stats = typeStats(records(student), day);
   let typeCount = 0, mastered = 0;
   const units = pool.units.map((u) => {
     const types = u.types.map((t) => {
       const st = stats.get(`${u.key}|${t.code}`) || new TypeStat();
-      return { code: t.code, name: t.name, desc: t.desc, attempts: st.attempts, correct: st.correctIds.size, rate: st.rate, status: st.status };
+      return { code: t.code, name: t.name, desc: t.desc, attempts: st.attempts, correct: st.correctIds.size,
+        rate: st.rate, recentN: st.recent.length, pL: st.attempts ? st.pL : null, days: st.okDays.size,
+        level: st.levelIndex, status: st.status, review: st.needsReview, stuck: st.stuck };
     });
     const counted = types.filter((t) => t.code !== OTHER);
-    const m = counted.filter((t) => t.status === "已熟練").length;
+    const m = counted.filter((t) => t.level >= 4).length;
     typeCount += counted.length; mastered += m;
     return { key: u.key, book: u.book, code: u.code, title: u.title, types, mastered: m, typeCount: counted.length,
       attempts: types.reduce((a, t) => a + t.attempts, 0) };

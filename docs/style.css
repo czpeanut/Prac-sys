@@ -70,9 +70,20 @@ select { font: inherit; flex: 1; min-width: 0; padding: 8px 10px; border: 1px so
 .types th { font-weight: 600; color: var(--muted); font-size: 13px; border-top: 0; }
 .types td.n { text-align: right; white-space: nowrap; }
 .tag { display: inline-block; font-size: 12px; padding: 0 8px; border-radius: 10px; white-space: nowrap; }
-.tag.s0 { background: var(--line); color: var(--muted); }
-.tag.s1 { background: var(--accent-bg); color: var(--accent); }
-.tag.s2 { background: var(--ok-bg); color: var(--ok); }
+/* 熟練度等級：灰 → 藍 → 綠 */
+.tag.m0 { background: var(--line); color: var(--muted); }
+.tag.m1 { background: var(--bg); color: var(--muted); border: 1px solid var(--line); }
+.tag.m2 { background: var(--accent-bg); color: var(--accent); }
+.tag.m3 { background: var(--accent); color: #fff; }
+.tag.m4 { background: var(--ok-bg); color: var(--ok); border: 1px solid var(--ok); }
+.tag.m5 { background: var(--ok); color: #fff; }
+.tag.flag-review { background: var(--lv-l1); color: #fff; margin-left: 4px; }
+.tag.flag-stuck { background: var(--lv-l3); color: #fff; margin-left: 4px; }
+.meter { display: inline-block; width: 44px; height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; margin-right: 6px; vertical-align: middle; }
+.meter i { display: block; height: 100%; background: var(--accent); }
+.legend-box summary { cursor: pointer; font-weight: 600; }
+.legend-box ul { padding-left: 20px; margin: 8px 0 0; }
+.legend-box li { margin: 4px 0; }
 .days { display: flex; flex-wrap: wrap; gap: 6px; }
 .days span { font-size: 13px; padding: 2px 8px; border-radius: 6px; background: var(--bg); border: 1px solid var(--line); }
 .scope-row { display: flex; gap: 10px; align-items: center; padding: 6px 0; border-top: 1px solid var(--line); }

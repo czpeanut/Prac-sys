@@ -2,6 +2,7 @@
 // 練習紀錄存在 Supabase（docs/config.js 有設定時），否則存在這台裝置的瀏覽器；見 store.js。
 import * as P from "./practice.js";
 import { online, store } from "./store.js";
+import { masteryLegend, typeTable } from "./ui.js";
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -210,26 +211,19 @@ function loadProgress() {
   const pct = p.typeCount ? Math.round((100 * p.mastered) / p.typeCount) : 0;
   const total = p.units.reduce((a, u) => a + u.attempts, 0);
   $("#prog-summary").innerHTML = `<div class="stats">
-      <div><div class="muted small">已熟練題型</div><div class="big">${p.mastered}<span class="muted small"> ／ ${p.typeCount}</span></div></div>
+      <div><div class="muted small">熟練以上題型</div><div class="big">${p.mastered}<span class="muted small"> ／ ${p.typeCount}</span></div></div>
       <div><div class="muted small">總進度</div><div class="big">${pct}%</div></div>
       <div><div class="muted small">累計作答</div><div class="big">${total}</div></div>
       <div><div class="muted small">連續達標</div><div class="big">${p.streak}<span class="muted small"> 天</span></div></div>
     </div><div class="bar"><i style="width:${pct}%"></i></div>`;
   $("#prog-units").innerHTML = p.units.map((u) => {
     const up = u.typeCount ? Math.round((100 * u.mastered) / u.typeCount) : 0;
-    const rows = u.types.map((t) => {
-      const s = { 未練習: "s0", 練習中: "s1", 已熟練: "s2" }[t.status];
-      const rate = t.rate === null ? "—" : `${Math.round(t.rate * 100)}%`;
-      return `<tr><td>${esc(t.name)}<div class="muted small">${esc(t.desc)}</div></td>
-        <td class="n">${t.correct}／${t.attempts}</td><td class="n">${rate}</td><td><span class="tag ${s}">${t.status}</span></td></tr>`;
-    }).join("");
     return `<div class="card unit"><h3><span>${esc(u.book)} ${esc(u.code)} ${esc(u.title)}</span>
         <span class="muted small">熟練 ${u.mastered}／${u.typeCount} 題型</span></h3>
       <div class="bar"><i style="width:${up}%"></i></div>
-      <details ${u.attempts ? "open" : ""}><summary class="muted small">各題型進度</summary>
-      <div class="scroll"><table class="types"><tr><th>題型</th><th>答對／作答</th><th>近 5 題</th><th></th></tr>${rows}</table></div>
-      </details></div>`;
+      <details ${u.attempts ? "open" : ""}><summary class="muted small">各題型進度</summary>${typeTable(u)}</details></div>`;
   }).join("");
+  $("#legend").innerHTML = masteryLegend();
   $("#prog-days").innerHTML = p.days.length
     ? p.days.map((d) => `<span>${d.day.slice(5)}　${d.ok}／${d.n}</span>`).join("")
     : '<span class="muted">還沒有紀錄</span>';
