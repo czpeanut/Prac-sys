@@ -7,7 +7,7 @@
     "test": "node --test tests/practice.test.mjs"
   },
   "devDependencies": {
-    "katex": "0.16.11",
+    "katex": "0.18.2",
     "three": "^0.160.0"
   }
 }
