@@ -115,6 +115,11 @@ function climberMesh(name, me) {
     g.add(ring);
     g.userData.ring = ring;
   }
+  // 點頭用的點擊範圍：比頭大一圈、看不見（低解析度下頭只有幾個像素）
+  const hit = new THREE.Mesh(new THREE.BoxGeometry(0.75, 0.75, 0.75), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  hit.position.y = 1.1;
+  g.add(hit);
+  g.userData.hit = hit;
   g.userData.parts = { body, head, hat, pack, legL, legR };
   g.scale.setScalar(me ? 1.25 : 1.0);
   return g;
@@ -191,7 +196,9 @@ export function createMountain(container, { climbers = [], units = [] } = {}) {
       label.textContent = c.name;
       label.hidden = !(c.me || shown.has(c.name) || list.length <= 20);
       labels.append(label);
-      return { ...c, mesh, label, phase: (hash(c.name) % 100) / 16 };
+      const person = { ...c, mesh, label, y0: pos.y, phase: (hash(c.name) % 100) / 16, bonk: null };
+      mesh.userData.hit.userData.person = person;
+      return person;
     });
     const me = people.find((p) => p.me);
     if (me) angle = Math.atan2(me.mesh.position.z, me.mesh.position.x);   // 鏡頭先轉到自己
@@ -200,14 +207,82 @@ export function createMountain(container, { climbers = [], units = [] } = {}) {
 
   // 鏡頭：繞著山轉，可拖曳；沒在拖就慢慢自轉（使用者偏好減少動態時不轉）
   let angle = 0, camY = H * 0.55, dist = 19, dragging = null;
+  const clock = new THREE.Clock();
   const still = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-  canvas.addEventListener("pointerdown", (e) => { dragging = { x: e.clientX, y: e.clientY, a: angle, cy: camY }; canvas.setPointerCapture(e.pointerId); });
+  const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+  function personAt(e) {                  // 滑鼠／手指下的是誰的頭
+    const r = canvas.getBoundingClientRect();
+    ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    ray.setFromCamera(ndc, camera);
+    const hit = ray.intersectObjects(people.map((p) => p.mesh.userData.hit), false)[0];
+    return hit?.object.userData.person ?? null;
+  }
+  canvas.addEventListener("pointerdown", (e) => { dragging = { x: e.clientX, y: e.clientY, a: angle, cy: camY, moved: false }; canvas.setPointerCapture(e.pointerId); });
   canvas.addEventListener("pointermove", (e) => {
-    if (!dragging) return;
+    if (!dragging) { canvas.style.cursor = personAt(e) ? "pointer" : "grab"; return; }
+    if (Math.hypot(e.clientX - dragging.x, e.clientY - dragging.y) > 6) dragging.moved = true;
     angle = dragging.a - (e.clientX - dragging.x) * 0.01;
     camY = Math.max(1, Math.min(H * 1.3, dragging.cy + (e.clientY - dragging.y) * 0.04));
   });
-  canvas.addEventListener("pointerup", () => { dragging = null; });
+  canvas.addEventListener("pointerup", (e) => {
+    const click = dragging && !dragging.moved;
+    dragging = null;
+    if (!click) return;
+    const p = personAt(e);
+    if (p) bonk(p, e);
+  });
+
+  // ─────── 敲頭特效：頭被壓扁、跳一下、星星噴出、頭上轉圈圈、「咚！」、音效 ───────
+  const effects = [];                     // {obj, vel, life, max}
+  const starMat = [0xffe14d, 0xffffff, 0xff9d2e].map((c) => new THREE.MeshBasicMaterial({ color: c }));
+  const starGeo = new THREE.OctahedronGeometry(0.17, 0);
+  let audio = null;
+  function bonkSound() {
+    try {
+      audio ??= new (window.AudioContext || window.webkitAudioContext)();
+      const t0 = audio.currentTime, o = audio.createOscillator(), g = audio.createGain();
+      o.type = "square";
+      o.frequency.setValueAtTime(660, t0);
+      o.frequency.exponentialRampToValueAtTime(140, t0 + 0.14);
+      g.gain.setValueAtTime(0.12, t0);
+      g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.18);
+      o.connect(g).connect(audio.destination);
+      o.start(t0); o.stop(t0 + 0.2);
+    } catch { /* 沒有音效也沒關係 */ }
+  }
+  const POW = ["咚！", "叩！", "POW!", "BONK!", "啵！"];
+  function bonk(p, e) {
+    if (p.me) { p.bonk = { t0: clock.getElapsedTime(), self: true }; return; }   // 點自己：開心跳一下
+    p.bonk = { t0: clock.getElapsedTime() };
+    bonkSound();
+    const head = new THREE.Vector3();
+    p.mesh.userData.parts.head.getWorldPosition(head);
+    for (let i = 0; i < 12; i++) {        // 星星往外噴
+      const m = new THREE.Mesh(starGeo, starMat[i % 3]);
+      m.position.copy(head);
+      const a = Math.random() * Math.PI * 2;
+      effects.push({ obj: m, vel: new THREE.Vector3(Math.cos(a) * 2.2, 2 + Math.random() * 2, Math.sin(a) * 2.2), life: 0, max: 0.8 });
+      scene.add(m);
+    }
+    const dizzy = new THREE.Group();      // 頭上轉圈圈的星星
+    for (let i = 0; i < 3; i++) {
+      const m = new THREE.Mesh(starGeo, starMat[0]);
+      m.position.set(Math.cos((i / 3) * Math.PI * 2) * 0.35, 0, Math.sin((i / 3) * Math.PI * 2) * 0.35);
+      dizzy.add(m);
+    }
+    dizzy.position.set(0, 1.45, 0);
+    p.mesh.add(dizzy);
+    effects.push({ obj: dizzy, dizzy: true, life: 0, max: 1.6, parent: p.mesh });
+    const r = container.getBoundingClientRect();
+    const pow = document.createElement("span");
+    pow.className = "mtn-pow";
+    pow.textContent = POW[Math.floor(Math.random() * POW.length)];
+    pow.style.left = `${e.clientX - r.left}px`;
+    pow.style.top = `${e.clientY - r.top}px`;
+    labels.append(pow);
+    setTimeout(() => pow.remove(), 900);
+    container.classList.remove("shake"); void container.offsetWidth; container.classList.add("shake");
+  }
   canvas.addEventListener("wheel", (e) => { e.preventDefault(); dist = Math.max(12, Math.min(40, dist + e.deltaY * 0.02)); }, { passive: false });
 
   function resize() {
@@ -238,11 +313,11 @@ export function createMountain(container, { climbers = [], units = [] } = {}) {
     return el;
   });
 
-  const clock = new THREE.Clock();
-  let raf = 0;
+  let raf = 0, last = 0;
   function frame() {
     raf = requestAnimationFrame(frame);
-    const t = clock.getElapsedTime();
+    const t = clock.getElapsedTime(), dt = Math.min(0.05, t - last);
+    last = t;
     if (!dragging && !still) angle += 0.0025;
     camera.position.set(Math.cos(angle) * dist, camY + 4, Math.sin(angle) * dist);
     camera.lookAt(0, Math.min(camY, H * 0.75), 0);
@@ -251,15 +326,40 @@ export function createMountain(container, { climbers = [], units = [] } = {}) {
       if (p.active) {                                            // 走路：腳前後擺、身體上下晃
         const s = Math.sin(t * 6 + p.phase);
         legL.rotation.x = s * 0.6; legR.rotation.x = -s * 0.6;
-        p.mesh.position.y = place(p.name, p.height).pos.y + Math.abs(s) * 0.06;
+        p.mesh.position.y = p.y0 + Math.abs(s) * 0.06;
       } else {                                                   // 坐著休息：腳往前伸、身體放低
         legL.rotation.x = legR.rotation.x = -Math.PI / 2;
         for (const part of [body, head, hat, pack]) part.position.y = part.userData.y0 ?? (part.userData.y0 = part.position.y), part.position.y = part.userData.y0 - 0.25;
       }
       if (p.mesh.userData.ring) p.mesh.userData.ring.rotation.z = t;
+      if (p.bonk) {
+        const e = t - p.bonk.t0;
+        if (e > 0.8) { p.bonk = null; head.scale.set(1, 1, 1); hat.scale.set(1, 1, 1); p.mesh.rotation.z = 0; }
+        else {
+          p.mesh.position.y = p.y0 + (e < 0.4 ? Math.sin((Math.PI * e) / 0.4) * (p.bonk.self ? 0.5 : 0.35) : 0);   // 跳一下
+          if (!p.bonk.self) {
+            const sq = Math.max(0, 1 - e / 0.45) ** 2;               // 頭被壓扁再彈回來
+            head.scale.set(1 + 0.35 * sq, 1 - 0.5 * sq, 1 + 0.35 * sq);
+            hat.scale.set(1 + 0.35 * sq, 1 - 0.5 * sq, 1 + 0.35 * sq);
+            p.mesh.rotation.z = Math.sin(e * 40) * 0.25 * Math.exp(-e * 5);   // 搖晃
+          }
+        }
+      }
       placeLabel(p.label, p.mesh, 1.3);
     }
     camps.forEach((c, i) => placeLabel(campLabels[i], c.obj, c.text === "山頂" ? 1.8 : 1.1));
+    for (let i = effects.length - 1; i >= 0; i--) {
+      const f = effects[i];
+      f.life += dt;
+      if (f.dizzy) f.obj.rotation.y += dt * 8;
+      else {
+        f.vel.y -= 9 * dt;
+        f.obj.position.addScaledVector(f.vel, dt);
+        f.obj.rotation.x += dt * 10;
+        f.obj.scale.setScalar(Math.max(0.01, 1 - f.life / f.max));
+      }
+      if (f.life >= f.max) { (f.parent ?? scene).remove(f.obj); effects.splice(i, 1); }
+    }
     renderer.render(scene, camera);
   }
   update(climbers);
@@ -270,6 +370,7 @@ export function createMountain(container, { climbers = [], units = [] } = {}) {
     dispose() {
       cancelAnimationFrame(raf);
       ro.disconnect();
+      audio?.close();
       renderer.dispose();
       canvas.remove(); labels.remove();
     },

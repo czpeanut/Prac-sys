@@ -82,10 +82,10 @@ async function loadBoard() {
   try { rows = await store.board(pool, day); }
   catch (err) { $("#board").innerHTML = `<p class="err">讀不到排行：${err.message}</p>`; return; }
   // 自己的高度用剛算好的（資料庫裡的可能還沒更新）
-  const myH = P.climbHeight(pool, me, day);
+  const parts = P.climbParts(pool, me, day), myH = parts.height;
   rows = rows.map((r) => (r.name === me.name ? { ...r, height: myH } : r));
   $("#board").innerHTML = boardTable(rows, { me: me.name, day });
-  $("#my-height").textContent = `你爬到 ${Math.round(myH * 100)}%`;
+  $("#my-height").textContent = `你爬到 ${Math.round(myH * 100)}%（熟練 ${Math.round(parts.mastery * 100)}%＋作答量 ${Math.round(parts.volume * 100)}%，共作答 ${parts.total} 題）`;
   if (scene) scene.dispose();
   scene = await mountainView($("#mtn"), rows, { me: me.name, units: pool.units, day });
 }

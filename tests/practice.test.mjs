@@ -159,7 +159,14 @@ test("爬山高度與本週排行", () => {
   const items = ids.map((q, i) => ({ q, unit: U, type: "T01", r: "A", ok: true, at: `2026-10-23T0${i}` }));
   const me = { sets: { "2026-10-23": { scope: [U], items } } };
   const types = pool.units.reduce((a, u) => a + u.types.filter((t) => t.code !== P.OTHER).length, 0);
-  assert.equal(P.climbHeight(pool, me, "2026-10-23"), Math.round((0.85 / types) * 1000) / 1000);   // 一個題型熟練
+  const parts = P.climbParts(pool, me, "2026-10-23");                  // 一個題型熟練、作答 5 題
+  assert.equal(parts.mastery, Math.round((0.85 / types) * 0.5 * 1000) / 1000);
+  assert.equal(parts.volume, Math.round((1 - Math.exp(-5 / 400)) * 0.5 * 1000) / 1000);
+  assert.ok(Math.abs(parts.height - parts.mastery - parts.volume) < 0.002);
+  // 只刷題（全錯）最多到一半；同樣熟練度，做越多爬越高
+  const spam = { sets: { "2026-10-23": { scope: [U], items: pool.questions.slice(0, 900).map((q, i) => ({ q: q.id, unit: q.unit, type: q.type_code, r: "A", ok: false, at: `T${i}` })) } } };
+  const h = P.climbParts(pool, spam, "2026-10-23");
+  assert.ok(h.height < 0.5 && h.volume > 0.4 && h.mastery < 0.05);
   const S = P.GOAL_START, d = (n) => P.addDays(S, n);
   const w = P.weekStats(student({ [S]: 10, [d(1)]: 4, [d(6)]: 12, [d(7)]: 3 }), d(6));
   assert.deepEqual([w.done, w.goalDays], [26, 1]);                     // 週四的 12 題算作答，不算達標天

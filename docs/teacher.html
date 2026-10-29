@@ -89,7 +89,7 @@ async function projector(day) {
   const box = document.createElement("div");
   box.className = "mtn-full";
   box.innerHTML = `<button class="close">✕ 關閉</button><div class="mtn"></div><aside>${boardTable(rows, { top: 15, day })}
-    <p class="muted small">高度＝熟練度；本週有練習的人在爬，還沒練的人坐著休息。</p></aside>`;
+    <p class="muted small">高度＝熟練度（最多 50%）＋作答總量（最多 50%）；本週有練習的人在爬，還沒練的人坐著休息。</p></aside>`;
   document.body.append(box);
   box.requestFullscreen?.().catch(() => {});
   const scene = await mountainView(box.querySelector(".mtn"), rows, { units: pool.units, day });

@@ -330,17 +330,33 @@ export function progress(pool, student, day) {
 
 // ─────────── 排行榜與爬山高度 ───────────
 
-// 爬山高度（0～1）：各題型熟練度等級的平均，山頂＝所有題型都精熟（「其他題型」不計）
+// 爬山高度（0～1）＝熟練度 × CLIMB_MIX.mastery ＋ 作答總量 × CLIMB_MIX.volume
+//   熟練度：各題型的平均（熟練以上照 LEVEL_HEIGHT；以下依掌握度、不超過該等級；所有題型精熟＝1）
+//   作答總量：1 − e^(−總題數 / CLIMB_VOLUME_K)，越做越高但遞減（100 題 ≈ 22%、300 ≈ 53%、600 ≈ 78%、1000 ≈ 92%）
+//   只靠刷題最多爬到一半，要到山頂得真的熟練
 export const LEVEL_HEIGHT = [0, 0.1, 0.3, 0.6, 0.85, 1];
-export function climbHeight(pool, student, day) {
-  const stats = typeStats(records(student), day);
+export const CLIMB_MIX = { mastery: 0.5, volume: 0.5 };
+export const CLIMB_VOLUME_K = 400;
+export function climbParts(pool, student, day) {
+  const recs = records(student);
+  const stats = typeStats(recs, day);
   let sum = 0, n = 0;
   for (const u of pool.units) for (const t of u.types) {
     if (t.code === OTHER) continue;
     n++;
-    sum += LEVEL_HEIGHT[stats.get(`${u.key}|${t.code}`)?.levelIndex ?? 0];
+    const st = stats.get(`${u.key}|${t.code}`);
+    if (!st) continue;
+    // 熟練以上照等級給分；以下依掌握度給分、但不超過該等級（一直答錯的「學習中」幾乎是 0）
+    sum += st.levelIndex >= 4 ? LEVEL_HEIGHT[st.levelIndex] : Math.min(LEVEL_HEIGHT[st.levelIndex], 0.6 * st.pL);
   }
-  return n ? Math.round((sum / n) * 1000) / 1000 : 0;
+  const mastery = n ? sum / n : 0;
+  const volume = 1 - Math.exp(-recs.length / CLIMB_VOLUME_K);
+  const r3 = (x) => Math.round(x * 1000) / 1000;
+  return { total: recs.length, mastery: r3(mastery * CLIMB_MIX.mastery), volume: r3(volume * CLIMB_MIX.volume),
+    height: r3(mastery * CLIMB_MIX.mastery + volume * CLIMB_MIX.volume) };
+}
+export function climbHeight(pool, student, day) {
+  return climbParts(pool, student, day).height;
 }
 
 // 本週（週五到下週四）排行用：作答題數、達標天數（休息日不算）
