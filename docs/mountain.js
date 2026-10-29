@@ -115,11 +115,6 @@ function climberMesh(name, me) {
     g.add(ring);
     g.userData.ring = ring;
   }
-  // 點頭用的點擊範圍：比頭大一圈、看不見（低解析度下頭只有幾個像素）
-  const hit = new THREE.Mesh(new THREE.BoxGeometry(0.75, 0.75, 0.75), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
-  hit.position.y = 1.1;
-  g.add(hit);
-  g.userData.hit = hit;
   g.userData.parts = { body, head, hat, pack, legL, legR };
   g.scale.setScalar(me ? 1.25 : 1.0);
   return g;
@@ -162,7 +157,8 @@ export function createMountain(container, { climbers = [], units = [] } = {}) {
   const sun = new THREE.DirectionalLight(0xffffff, 1.6);
   sun.position.set(10, 18, 6);
   scene.add(sun);
-  scene.add(mountainMesh(), ground());
+  const mountain = mountainMesh();
+  scene.add(mountain, ground());
   trees(scene);
 
   // 每一段山坡＝一個章節，段落交界插營地旗；山頂插大旗
@@ -197,7 +193,6 @@ export function createMountain(container, { climbers = [], units = [] } = {}) {
       label.hidden = !(c.me || shown.has(c.name) || list.length <= 20);
       labels.append(label);
       const person = { ...c, mesh, label, y0: pos.y, phase: (hash(c.name) % 100) / 16, bonk: null };
-      mesh.userData.hit.userData.person = person;
       return person;
     });
     const me = people.find((p) => p.me);
@@ -209,28 +204,44 @@ export function createMountain(container, { climbers = [], units = [] } = {}) {
   let angle = 0, camY = H * 0.55, dist = 19, dragging = null;
   const clock = new THREE.Clock();
   const still = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-  const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
-  function personAt(e) {                  // 滑鼠／手指下的是誰的頭
+  // 點誰的頭：小人在 240 線畫面上只有幾個像素，所以不用精確射線，
+  // 改找螢幕上離手指最近、沒被山擋住的頭（滑鼠 30px、手指 40px 內）
+  const ray = new THREE.Raycaster(), headPos = new THREE.Vector3(), scr = new THREE.Vector3();
+  function personAt(e) {
     const r = canvas.getBoundingClientRect();
-    ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
-    ray.setFromCamera(ndc, camera);
-    const hit = ray.intersectObjects(people.map((p) => p.mesh.userData.hit), false)[0];
-    return hit?.object.userData.person ?? null;
+    const reach = e.pointerType === "touch" ? 40 : 30;
+    const found = [];
+    for (const p of people) {
+      p.mesh.userData.parts.head.getWorldPosition(headPos);
+      scr.copy(headPos).project(camera);
+      if (scr.z >= 1) continue;
+      const d = Math.hypot((scr.x * 0.5 + 0.5) * r.width + r.left - e.clientX, (-scr.y * 0.5 + 0.5) * r.height + r.top - e.clientY);
+      if (d <= reach) found.push({ p, d, pos: headPos.clone() });
+    }
+    found.sort((a, b) => a.d - b.d);
+    for (const f of found) {               // 被山擋住的（在山的另一面）跳過
+      const dir = f.pos.clone().sub(camera.position), len = dir.length();
+      ray.set(camera.position, dir.normalize());
+      const hit = ray.intersectObject(mountain, false)[0];
+      if (!hit || hit.distance > len - 0.4) return f.p;
+    }
+    return null;
   }
-  canvas.addEventListener("pointerdown", (e) => { dragging = { x: e.clientX, y: e.clientY, a: angle, cy: camY, moved: false }; canvas.setPointerCapture(e.pointerId); });
+  // 按下去就判斷：按在頭上直接敲，不會開始拖曳；按在空白處才拖曳旋轉
+  canvas.addEventListener("pointerdown", (e) => {
+    const p = personAt(e);
+    if (p) { e.preventDefault(); bonk(p, e); return; }
+    dragging = { x: e.clientX, y: e.clientY, a: angle, cy: camY };
+    canvas.setPointerCapture(e.pointerId);
+  });
   canvas.addEventListener("pointermove", (e) => {
-    if (!dragging) { canvas.style.cursor = personAt(e) ? "pointer" : "grab"; return; }
-    if (Math.hypot(e.clientX - dragging.x, e.clientY - dragging.y) > 6) dragging.moved = true;
+    if (!dragging) { if (e.pointerType === "mouse") canvas.style.cursor = personAt(e) ? "pointer" : "grab"; return; }
     angle = dragging.a - (e.clientX - dragging.x) * 0.01;
     camY = Math.max(1, Math.min(H * 1.3, dragging.cy + (e.clientY - dragging.y) * 0.04));
   });
-  canvas.addEventListener("pointerup", (e) => {
-    const click = dragging && !dragging.moved;
-    dragging = null;
-    if (!click) return;
-    const p = personAt(e);
-    if (p) bonk(p, e);
-  });
+  const endDrag = () => { dragging = null; };
+  canvas.addEventListener("pointerup", endDrag);
+  canvas.addEventListener("pointercancel", endDrag);
 
   // ─────── 敲頭特效：頭被壓扁、跳一下、星星噴出、頭上轉圈圈、「咚！」、音效 ───────
   const effects = [];                     // {obj, vel, life, max}
