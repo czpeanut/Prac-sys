@@ -6,7 +6,7 @@ import * as P from "../docs/practice.js";
 
 const raw = JSON.parse(readFileSync(new URL("../docs/pool.json", import.meta.url)));
 const pool = { ...raw, byId: Object.fromEntries(raw.questions.map((q) => [q.id, q])) };
-const U = pool.units[0].key;
+const U = P.openUnits(pool)[0].key;           // 第一個開放的章節（關閉的章節不出題）
 
 test("題目池只有純文字單選題，且答案是選項代號", () => {
   for (const q of pool.questions) {
@@ -34,7 +34,7 @@ test("答錯的題目隔天優先再出（最多 4 題），答對的不重出",
 });
 
 test("沒熟練的題型抽得比已熟練的多", () => {
-  const types = pool.units[0].types.filter((t) => t.code !== P.OTHER).map((t) => t.code);
+  const types = pool.units.find((u) => u.key === U).types.filter((t) => t.code !== P.OTHER).map((t) => t.code);
   const stats = new Map();
   for (const c of types.slice(0, -1)) {
     const st = new P.TypeStat();
@@ -76,9 +76,9 @@ test("進度：單元熟練數＝熟練以上的題型數", () => {
   const items = ids.map((q, i) => ({ q, unit: U, type: "T01", r: "A", ok: true, at: `2026-10-15T0${i}` }));
   const me = { scope: [U], sets: { "2026-10-15": { scope: [U], items } } };
   const p = P.progress(pool, me, "2026-10-15");
-  const t = p.units[0].types.find((x) => x.code === "T01");
+  const t = p.units.find((u) => u.key === U).types.find((x) => x.code === "T01");
   assert.deepEqual([t.status, t.level, t.attempts, t.correct], ["熟練", 4, 5, 5]);
-  assert.equal(p.units[0].mastered, 1);
+  assert.equal(p.units.find((u) => u.key === U).mastered, 1);
 });
 
 test("換章節：已作答的保留，其餘換成新範圍，總數不變", () => {
@@ -172,4 +172,51 @@ test("爬山高度與本週排行", () => {
   assert.deepEqual([w.done, w.goalDays], [26, 1]);                     // 週四的 12 題算作答，不算達標天
   const r = P.rank([{ name: "甲", done: 10, goalDays: 1 }, { name: "乙", done: 30, goalDays: 2 }, { name: "丙", done: 10, goalDays: 1 }]);
   assert.deepEqual(r.map((x) => `${x.name}${x.rank}`).sort(), ["丙2", "乙1", "甲2"].sort());   // 同分同名次
+});
+
+// 暫時改設定跑一段測試，跑完還原
+function withConfig({ closed, caps }, fn) {
+  const c0 = [...P.CLOSED_UNITS], w0 = [...P.WEEK_CAPS];
+  P.CLOSED_UNITS.splice(0, Infinity, ...closed);
+  P.WEEK_CAPS.splice(0, Infinity, ...caps);
+  try { fn(); } finally { P.CLOSED_UNITS.splice(0, Infinity, ...c0); P.WEEK_CAPS.splice(0, Infinity, ...w0); }
+}
+
+test("關閉的章節：不能選、不出題，紀錄與進度保留", () => {
+  const [a, b] = pool.units.map((u) => u.key);
+  withConfig({ closed: [a], caps: [] }, () => {
+    assert.ok(!P.openUnits(pool).some((u) => u.key === a));
+    assert.deepEqual(P.openScope(pool, [a]), [b]);                    // 只選了關閉的章節 → 改用第一個開放的
+    assert.deepEqual(P.openScope(pool, [a, b]), [b]);
+    const ids = pool.questions.filter((q) => q.unit === a).slice(0, 5).map((q) => q.id);
+    const me = { scope: [a], sets: { "2026-11-01": { scope: [a], items: ids.map((q, i) => ({ q, unit: a, type: pool.byId[q].type_code, r: "A", ok: i < 2, at: `2026-11-01T0${i}` })) } } };
+    const s = P.newSet(pool, me, "2026-11-03", P.seeded(9));
+    assert.ok(s.items.every((i) => i.unit !== a), "答錯的關閉章節題目也不再出");
+    assert.deepEqual(s.scope, [b]);
+    assert.equal(P.progress(pool, me, "2026-11-03").units.find((u) => u.key === a).attempts, 5);   // 進度保留
+  });
+});
+
+test("每週上限：超過就不出該章節，改由其他開放章節補滿", () => {
+  const [, b, c] = pool.units.map((u) => u.key);
+  withConfig({ closed: [], caps: [{ unit: b, max: 25, from: "2026-11-05", to: "2026-11-12" }] }, () => {
+    const d = (n) => P.addDays("2026-11-06", n);                      // 11/6 週五起的週期
+    const me = { scope: [b], sets: {} };
+    let total = 0;
+    for (let k = 0; k < 4; k++) {                                     // 同一週連做 4 份（每份 10 題、只選 b）
+      const day = d(k);
+      me.sets[day] = P.newSet(pool, me, day, P.seeded(20 + k));
+      me.sets[day].items.forEach((it, i) => Object.assign(it, { r: "A", ok: true, at: `${day}T${String(i).padStart(2, "0")}` }));
+      assert.equal(me.sets[day].items.length, P.DAILY_N, "其他章節補滿 10 題");
+      total += me.sets[day].items.filter((i) => i.unit === b).length;
+    }
+    assert.equal(total, 25);                                          // b 本週剛好出到 25 題
+    assert.equal(P.capsLeft(me, d(3))[b], 0);
+    me.sets[d(3)] = P.extend(pool, me, d(3), 10, P.seeded(30));       // 再練：也不會超過
+    assert.equal(P.weekUnitCount(me, b, d(3)), 25);
+    const next = P.newSet(pool, me, d(7), P.seeded(31));              // 下一週期（11/13）已過期限：不限
+    assert.ok(next.items.every((i) => i.unit === b));
+    assert.equal(P.capFor(b, "2026-11-04"), null);                    // 期限前不限
+    assert.ok(c);
+  });
 });

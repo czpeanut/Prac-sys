@@ -150,3 +150,5 @@ table.board tr.me td { background: var(--accent-bg); font-weight: 700; }
 .mtn.shake { animation: shake .25s linear; }
 @keyframes shake { 25% { transform: translate(3px, -2px); } 50% { transform: translate(-3px, 2px); } 75% { transform: translate(2px, 1px); } }
 @media (prefers-reduced-motion: reduce) { .mtn.shake { animation: none; } }
+.chip .cap { display: block; font-size: 11px; font-weight: 600; color: var(--lv-l1); }
+.chip .cap.full { color: var(--bad); }

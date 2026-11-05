@@ -68,7 +68,7 @@ $("#logout").onclick = () => { store.logout(); me = null; show("login"); $("#log
 async function enter(name, btn) {
   if (btn) btn.disabled = true;
   $("#login-err").textContent = "";
-  try { start(await store.login(name, [pool.units[0].key])); }
+  try { start(await store.login(name, [P.openUnits(pool)[0].key])); }
   catch (err) { $("#login-err").textContent = err.message; }
   finally { if (btn) btn.disabled = false; }
 }
@@ -93,6 +93,9 @@ async function loadBoard() {
 function start(student) {
   me = student;
   me.sets ||= {};
+  // 範圍裡有已關閉的章節就拿掉（紀錄保留）
+  const scope = P.openScope(pool, me.scope);
+  if (scope.join() !== (me.scope || []).join()) { me.scope = scope; sync("scope"); }
   $("#who-name").textContent = me.name;
   $("#backup-card").hidden = online;
   show("main"); tab("today");
@@ -257,9 +260,17 @@ function loadProgress() {
 // ─────────── 練習章節 ───────────
 const picked = () => [...document.querySelectorAll("#chapters input:checked")].map((x) => x.value);
 function renderChapters() {
-  $("#chapters").innerHTML = pool.units.map((u) => `<label class="chip" title="${esc(u.title)}（${u.n} 題）">
+  // 只列開放的章節；有每週上限的標出本週還剩幾題
+  const day = P.today(), left = P.capsLeft(me, day);
+  $("#chapters").innerHTML = P.openUnits(pool).map((u) => {
+    const cap = P.capFor(u.key, day);
+    const capText = cap ? `<span class="cap${left[u.key] ? "" : " full"}">本週上限 ${cap.max} 題，${left[u.key] ? `剩 ${left[u.key]} 題` : "已滿"}</span>` : "";
+    return `<label class="chip" title="${esc(u.title)}（${u.n} 題）">
       <input type="checkbox" value="${esc(u.key)}" ${todaySet.scope.includes(u.key) ? "checked" : ""}>
-      <span><b>${esc(u.code)}</b> ${esc(u.title)}</span></label>`).join("");
+      <span><b>${esc(u.code)}</b> ${esc(u.title)}${capText}</span></label>`;
+  }).join("");
+  const full = P.openUnits(pool).filter((u) => P.capFor(u.key, day) && !left[u.key] && me.scope.includes(u.key));
+  $("#scope-msg").textContent = full.length ? `${full.map((u) => u.code).join("、")} 本週已達上限，其餘題目改從其他章節出。` : "";
   $("#scope-save").disabled = true;
   document.querySelectorAll("#chapters input").forEach((x) => (x.onchange = () => {
     const units = picked();

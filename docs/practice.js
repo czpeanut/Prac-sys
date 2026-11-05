@@ -26,7 +26,14 @@ export const DAILY_GOAL = 10;
 export const GOAL_START = "2026-10-23";  // 週五；每個週期是週五到下週四
 export const REST_WEEKDAYS = [4];        // 0＝週日 … 4＝週四：不計題目
 const WEEKDAY = ["日", "一", "二", "三", "四", "五", "六"];
-export const MAX_PER_DAY = 100;          // 一天最多出幾題（資料庫一列的上限）
+export const MAX_PER_DAY = 100;
+
+// 章節開放與每週上限（老師調整這裡）
+//   CLOSED_UNITS：暫時不讓學生選、不出題；作答紀錄與進度都保留
+//   WEEK_CAPS：某章節在 from～to 期間，每個週期（週五～下週四）最多出幾題；
+//              超過就不再出該章節，其餘改從其他開放章節補
+export const CLOSED_UNITS = ["8-1_2-2"];
+export const WEEK_CAPS = [{ unit: "8-1_2-3", max: 25, from: "2026-11-05", to: "2026-11-12" }];          // 一天最多出幾題（資料庫一列的上限）
 export const REVIEW_MAX = 3;
 // 熟練度量尺參數
 export const BKT = { init: 0.15, learn: 0.10, guess: 0.25, slip: 0.10 };
@@ -164,11 +171,13 @@ export function history(recs) {
   return h;
 }
 
-export function choose(pool, scope, hist, stats, day, n = DAILY_N, rng = Math.random, exclude = []) {
+export function choose(pool, scope, hist, stats, day, n = DAILY_N, rng = Math.random, exclude = [], caps = {}, fallback = true) {
   const unitKeys = pool.units.map((u) => u.key);
-  scope = unitKeys.filter((u) => scope.includes(u));
-  if (!scope.length) scope = unitKeys.slice(0, 1);
   const byId = pool.byId;
+  scope = openScope(pool, scope);
+  const left = { ...caps };                // 各章節本週還能出幾題（沒有上限的不在裡面）
+  const room = (id) => !(byId[id].unit in left) || left[byId[id].unit] > 0;
+  const take1 = (id) => { picked.push(id); if (byId[id].unit in left) left[byId[id].unit]--; };
   const inScope = pool.questions.filter((q) => scope.includes(q.unit)).map((q) => q.id);
   const last = (id) => hist.get(id)?.at(-1);
   const picked = [];
@@ -177,7 +186,7 @@ export function choose(pool, scope, hist, stats, day, n = DAILY_N, rng = Math.ra
   // 1. 答錯還沒再答對的題目，隔天以後再出一次
   const wrong = inScope.filter((id) => !skip.has(id) && last(id) && !last(id).ok && last(id).day < day)
     .sort((a, b) => (last(a).day < last(b).day ? -1 : 1));
-  picked.push(...wrong.slice(0, Math.min(REVIEW_MAX, n)));
+  for (const id of wrong) if (picked.length < Math.min(REVIEW_MAX, n) && room(id)) take1(id);
 
   // 2. 依題型輪流抽
   const queues = new Map();
@@ -197,21 +206,53 @@ export function choose(pool, scope, hist, stats, day, n = DAILY_N, rng = Math.ra
     for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return x[i] - y[i];
     return 0;
   });
-  while (picked.length < n && [...queues.values()].some((q) => q.length)) {
+  const usable = (k) => queues.get(k).length && room(queues.get(k)[0]);
+  while (picked.length < n && order.some(usable)) {
     for (const k of order) {
       const take = stat(k).mastered || k.endsWith(`|${OTHER}`) ? 1 : 2;
-      for (let i = 0; i < take && queues.get(k).length && picked.length < n; i++) picked.push(queues.get(k).shift());
+      for (let i = 0; i < take && usable(k) && picked.length < n; i++) take1(queues.get(k).shift());
     }
+  }
+  // 範圍內的題目用完或達到每週上限：從其他開放章節補滿（依教學順序，離範圍近的先）
+  if (fallback && picked.length < n) {
+    const others = openUnits(pool).map((u) => u.key).filter((u) => !scope.includes(u) && (!(u in left) || left[u] > 0));
+    if (others.length) picked.push(...choose(pool, others, hist, stats, day, n - picked.length, rng, [...exclude, ...picked], left, false));
   }
 
   const unitOrd = new Map(unitKeys.map((u, i) => [u, i]));
   return picked.sort((a, b) => unitOrd.get(byId[a].unit) - unitOrd.get(byId[b].unit) || (byId[a].difficulty ?? 3) - (byId[b].difficulty ?? 3));
 }
 
+// ─────────── 章節開放與每週上限 ───────────
+export const openUnits = (pool) => pool.units.filter((u) => !CLOSED_UNITS.includes(u.key));
+// 學生的範圍只留開放的章節；都關了就用第一個開放的
+export function openScope(pool, scope = []) {
+  const open = openUnits(pool).map((u) => u.key).filter((u) => scope.includes(u));
+  return open.length ? open : openUnits(pool).slice(0, 1).map((u) => u.key);
+}
+export const capFor = (unit, day) => WEEK_CAPS.find((c) => c.unit === unit && day >= c.from && day <= c.to) ?? null;
+// 本週（週五～下週四）已出了幾題某章節（已出題就算，不論有沒有作答）；skipDay：不算這一天（要重出這天時）
+export function weekUnitCount(student, unit, day, { skipDay = false } = {}) {
+  const w = weekOf(day);
+  let n = 0;
+  for (const [d, set] of Object.entries(student.sets || {})) {
+    if (d < w.start || d > w.end || (skipDay && d === day)) continue;
+    n += set.items.filter((i) => i.unit === unit).length;
+  }
+  return n;
+}
+// 各有上限的章節本週還剩幾題
+export function capsLeft(student, day, opts) {
+  const out = {};
+  for (const c of WEEK_CAPS) if (capFor(c.unit, day)) out[c.unit] = Math.max(0, c.max - weekUnitCount(student, c.unit, day, opts));
+  return out;
+}
+
 export function newSet(pool, student, day, rng = Math.random) {
   const recs = records(student);
-  const ids = choose(pool, student.scope, history(recs), typeStats(recs, day), day, DAILY_N, rng);
-  return { scope: [...student.scope], items: ids.map((id) => ({ q: id, unit: pool.byId[id].unit, type: pool.byId[id].type_code, r: null, ok: null, at: null })) };
+  const scope = openScope(pool, student.scope);
+  const ids = choose(pool, scope, history(recs), typeStats(recs, day), day, DAILY_N, rng, [], capsLeft(student, day, { skipDay: true }));
+  return { scope, items: ids.map((id) => item(pool, id)) };
 }
 
 const item = (pool, id) => ({ q: id, unit: pool.byId[id].unit, type: pool.byId[id].type_code, r: null, ok: null, at: null });
@@ -223,8 +264,11 @@ export function rescope(pool, student, day, rng = Math.random) {
   const kept = set.items.filter((i) => i.r !== null);
   const total = Math.max(set.items.length, DAILY_N);
   const recs = records(student);
-  const ids = choose(pool, student.scope, history(recs), typeStats(recs, day), day, total - kept.length, rng, kept.map((i) => i.q));
-  return { scope: [...student.scope], items: [...kept, ...ids.map((id) => item(pool, id))] };
+  const caps = capsLeft(student, day, { skipDay: true });
+  for (const u in caps) caps[u] = Math.max(0, caps[u] - kept.filter((i) => i.unit === u).length);
+  const scope = openScope(pool, student.scope);
+  const ids = choose(pool, scope, history(recs), typeStats(recs, day), day, total - kept.length, rng, kept.map((i) => i.q), caps);
+  return { scope, items: [...kept, ...ids.map((id) => item(pool, id))] };
 }
 
 // 今天的題目做完後再加 n 題（多練、或補之前欠的）
@@ -233,7 +277,7 @@ export function extend(pool, student, day, n = DAILY_N, rng = Math.random) {
   n = Math.min(n, MAX_PER_DAY - set.items.length);
   if (n <= 0) return set;
   const recs = records(student);
-  const ids = choose(pool, student.scope, history(recs), typeStats(recs, day), day, n, rng, set.items.map((i) => i.q));
+  const ids = choose(pool, openScope(pool, student.scope), history(recs), typeStats(recs, day), day, n, rng, set.items.map((i) => i.q), capsLeft(student, day));
   return { ...set, items: [...set.items, ...ids.map((id) => item(pool, id))] };
 }
 
