@@ -64,6 +64,14 @@ def load_classification(oleqs: Path, units: list[str]) -> dict[str, dict]:
     return out
 
 
+def dedup_text(t: str) -> str:
+    """比對重複題用：同一題被不同學校沿用時，常只差在標點、空白、填答底線、括號全半形與「下列／請問」這類字。"""
+    t = t.replace("（", "(").replace("）", ")").replace("，", ",").replace("？", "?").replace("：", ":")
+    t = re.sub(r"\(\s*\)|_{2,}|＿+|\s+|[、,.。?:;；！!「」\"'＝=]|\\[,;! ]", "", t)
+    t = re.sub(r"^\(?\d+\)?[.、]?", "", t)
+    return re.sub(r"下列|請問|試問|則", "", t).lower()
+
+
 def has_figure(q: dict) -> bool:
     return bool(q.get("assets") or q.get("shared_asset") or (q.get("group_stem") or "").strip()
                 or any(o.get("asset") for o in q.get("options") or []))
@@ -132,9 +140,8 @@ def main() -> None:
                 skipped["需要附圖"] += 1
                 continue
             opts = q.get("options") or []
-            key = hashlib.sha1("\x1f".join([re.sub(r"\s+", "", stem)] +
-                                           [re.sub(r"\s+", "", o.get("content") or "") for o in opts])
-                               .encode()).hexdigest()
+            key = hashlib.sha1("\x1f".join([dedup_text(stem)] +
+                                           sorted(dedup_text(o.get("content") or "") for o in opts)).encode()).hexdigest()
             if key in seen:
                 skipped["重複題"] += 1
                 continue

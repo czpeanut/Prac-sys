@@ -24,13 +24,33 @@ test("每天一份 DAILY_N 題、只從範圍內出、不重複", () => {
   assert.ok(set.items.every((i) => i.unit === U));
 });
 
-test("答錯的題目隔天優先再出（最多 4 題），答對的不重出", () => {
+test("答錯的題目隔 REVIEW_GAP 天以上優先再出（每天最多 REVIEW_MAX 題），答對的不重出", () => {
   const ids = pool.questions.filter((q) => q.unit === U).map((q) => q.id);
-  const items = ids.slice(0, 10).map((q, i) => ({ q, unit: U, type: pool.byId[q].type_code, r: "A", ok: i >= 6, at: `2026-10-14T0${i}` }));
-  const me = { scope: [U], sets: { "2026-10-14": { scope: [U], items } } };
-  const next = P.newSet(pool, me, "2026-10-15", P.seeded(2)).items.map((i) => i.q);
+  const items = ids.slice(0, 10).map((q, i) => ({ q, unit: U, type: pool.byId[q].type_code, r: "A", ok: i >= 6, at: `2026-10-13T0${i}` }));
+  const me = { scope: [U], sets: { "2026-10-13": { scope: [U], items } } };
+  const tooSoon = P.newSet(pool, me, "2026-10-14", P.seeded(2)).items.map((i) => i.q);   // 隔 1 天：還不出
+  assert.equal(ids.slice(0, 6).filter((q) => tooSoon.includes(q)).length, 0);
+  const next = P.newSet(pool, me, "2026-10-15", P.seeded(2)).items.map((i) => i.q);       // 隔 2 天
   assert.equal(ids.slice(0, 6).filter((q) => next.includes(q)).length, P.REVIEW_MAX);
   assert.equal(ids.slice(6, 10).filter((q) => next.includes(q)).length, 0);
+});
+
+test("範圍內還有沒做過的題，就不重出以前答對的題（不論題型大小）", () => {
+  const me = { scope: [U], sets: {} };
+  const inScope = pool.questions.filter((q) => q.unit === U).length;
+  let day = "2026-11-06", seen = new Set(), repeatOk = 0;
+  const rng = P.seeded(5);
+  for (let k = 0; k < 9; k++, day = P.addDays(day, 1)) {
+    const set = P.newSet(pool, me, day, rng);
+    for (const [i, it] of set.items.entries()) {
+      if (seen.has(it.q) && P.records(me).filter((r) => r.q === it.q).at(-1).ok && seen.size < inScope) repeatOk++;
+      seen.add(it.q);
+      Object.assign(it, { r: "A", ok: true, at: `${day}T${String(i).padStart(2, "0")}` });
+    }
+    me.sets[day] = set;
+  }
+  assert.equal(repeatOk, 0);
+  assert.equal(seen.size, Math.min(inScope, 90));
 });
 
 test("沒熟練的題型抽得比已熟練的多", () => {

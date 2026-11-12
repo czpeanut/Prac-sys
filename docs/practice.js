@@ -1,10 +1,11 @@
 // 出題與進度計算（純函式，不碰瀏覽器，tests/ 用 node 直接測）。
 //
 // 每日出題（一份 DAILY_N 題，做完可以再加；只從學生選的練習範圍裡出）：
-//   1. 先放「之前答錯、還沒再答對」的題目（最多 REVIEW_MAX 題，昨天以前的）
-//   2. 其餘依題型輪流抽：還沒熟練（或需複習）的題型每輪抽 2 題、熟練以上的 1 題，
-//      弱的題型（正確率低、做得少）排前面；優先抽沒做過的題目，題型的新題用完才重出最久以前答對的題目
-//   3. 依單元順序、難度由易到難排好
+//   1. 先放「之前答錯、還沒再答對」的題目（隔 REVIEW_GAP 天以上，每天最多 REVIEW_MAX 題）
+//   2. 其餘依題型輪流抽「沒做過的題目」：還沒熟練（或需複習）的題型每輪抽 2 題、熟練以上的 1 題，
+//      弱的題型（正確率低、做得少）排前面
+//   3. 範圍內沒做過的都用完，才重出以前答對的題目（最久沒做的先）
+//   4. 依單元順序、難度由易到難排好
 //
 // 題型熟練度量尺（每個學生 × 每個題型，詳見 README「熟練度量尺」）：
 //   掌握度 P(L)：貝氏知識追蹤（BKT，Corbett & Anderson 1995），依作答先後逐題更新，
@@ -34,7 +35,8 @@ export const MAX_PER_DAY = 100;
 //              超過就不再出該章節，其餘改從其他開放章節補
 export const CLOSED_UNITS = ["8-1_2-2"];
 export const WEEK_CAPS = [{ unit: "8-1_2-3", max: 25, from: "2026-11-05", to: "2026-11-12" }];          // 一天最多出幾題（資料庫一列的上限）
-export const REVIEW_MAX = 3;
+export const REVIEW_MAX = 2;               // 每天最多重出幾題答錯的
+export const REVIEW_GAP = 2;               // 答錯的題至少隔幾天才重出（間隔練習，不要天天出同一題）
 // 熟練度量尺參數
 export const BKT = { init: 0.15, learn: 0.10, guess: 0.25, slip: 0.10 };
 export const RECENT = 10;                // 近期表現看最近幾次作答
@@ -184,18 +186,18 @@ export function choose(pool, scope, hist, stats, day, n = DAILY_N, rng = Math.ra
   const skip = new Set(exclude);
 
   // 1. 答錯還沒再答對的題目，隔天以後再出一次
-  const wrong = inScope.filter((id) => !skip.has(id) && last(id) && !last(id).ok && last(id).day < day)
+  const wrong = inScope.filter((id) => !skip.has(id) && last(id) && !last(id).ok && daysBetween(last(id).day, day) >= REVIEW_GAP)
     .sort((a, b) => (last(a).day < last(b).day ? -1 : 1));
   for (const id of wrong) if (picked.length < Math.min(REVIEW_MAX, n) && room(id)) take1(id);
 
-  // 2. 依題型輪流抽
-  const queues = new Map();
+  // 2. 依題型輪流抽：先只抽沒做過的題目（所有題型都輪過）；範圍內沒做過的都用完了，才重出以前答對的（最久沒做的先）
+  //    （以前是每個題型「新題＋舊題」排成一列，小題型新題用完就開始重出舊題，大題型明明還有很多新題）
+  const queues = new Map(), olds = new Map();
   for (const u of scope) {
     for (const t of pool.units.find((x) => x.key === u).types) {
       const ids = pool.questions.filter((q) => q.unit === u && q.type_code === t.code && !picked.includes(q.id) && !skip.has(q.id)).map((q) => q.id);
-      const fresh = shuffle(ids.filter((id) => !hist.has(id)), rng);
-      const old = ids.filter((id) => hist.has(id) && last(id).ok).sort((a, b) => (last(a).day < last(b).day ? -1 : 1));
-      queues.set(`${u}|${t.code}`, [...fresh, ...old]);
+      queues.set(`${u}|${t.code}`, shuffle(ids.filter((id) => !hist.has(id)), rng));
+      olds.set(`${u}|${t.code}`, ids.filter((id) => hist.has(id) && last(id).ok).sort((a, b) => (last(a).day < last(b).day ? -1 : 1)));
     }
   }
   const stat = (k) => stats.get(k) || new TypeStat();
@@ -206,12 +208,20 @@ export function choose(pool, scope, hist, stats, day, n = DAILY_N, rng = Math.ra
     for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return x[i] - y[i];
     return 0;
   });
-  const usable = (k) => queues.get(k).length && room(queues.get(k)[0]);
-  while (picked.length < n && order.some(usable)) {
-    for (const k of order) {
-      const take = stat(k).mastered || k.endsWith(`|${OTHER}`) ? 1 : 2;
-      for (let i = 0; i < take && usable(k) && picked.length < n; i++) take1(queues.get(k).shift());
+  const roundRobin = (qs) => {
+    const usable = (k) => qs.get(k).length && room(qs.get(k)[0]);
+    while (picked.length < n && order.some(usable)) {
+      for (const k of order) {
+        const take = stat(k).mastered || k.endsWith(`|${OTHER}`) ? 1 : 2;
+        for (let i = 0; i < take && usable(k) && picked.length < n; i++) take1(qs.get(k).shift());
+      }
     }
+  };
+  roundRobin(queues);
+  // 舊題比較：只有範圍內的新題全部用完才出（最久以前答對的先，等於間隔複習）
+  if (picked.length < n) {
+    const allOld = [...olds.values()].flat().sort((a, b) => (last(a).day < last(b).day ? -1 : 1));
+    for (const id of allOld) if (picked.length < n && room(id)) take1(id);
   }
   // 範圍內的題目用完或達到每週上限：從其他開放章節補滿（依教學順序，離範圍近的先）
   if (fallback && picked.length < n) {
